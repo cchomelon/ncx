@@ -1,0 +1,2436 @@
+<!doctype html>
+<!--
+  THROWAWAY PROTOTYPE
+  Answer so far: the explorer workbench hierarchy (former variant A).
+  Question now: do its field, time, and curve interactions feel right?
+  Run from the repository root: python3 -m http.server 8765
+
+  Plot furniture follows Style/ (see Style/Guidance.md):
+    - AVHershey Simplex for every figure glyph, system sans for UI chrome.
+    - Ink families kept apart: furniture hairlines never reach data weight.
+    - Colour is driven by the variable's own domain. Diverging maps only where
+      zero is a real reference, and then with symmetric limits.
+    - Both plots lay out in device pixels, so nothing stretches with the window.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ncx UI prototype</title>
+    <style>
+      @font-face {
+        font-family: "AVHershey Simplex";
+        src: url("../Style/Fonts/AVHershey-OTF/otf/AVHersheySimplexLight.otf") format("opentype");
+        font-weight: 300;
+        font-display: swap;
+      }
+
+      @font-face {
+        font-family: "AVHershey Simplex";
+        src: url("../Style/Fonts/AVHershey-OTF/otf/AVHersheySimplexMedium.otf") format("opentype");
+        font-weight: 400;
+        font-display: swap;
+      }
+
+      @font-face {
+        font-family: "AVHershey Simplex";
+        src: url("../Style/Fonts/AVHershey-OTF/otf/AVHersheySimplexHeavy.otf") format("opentype");
+        font-weight: 700;
+        font-display: swap;
+      }
+
+      :root {
+        color-scheme: light;
+
+        /* Structural ink, from Style/plotstyle/palette.py INK. */
+        --paper: #ffffff;
+        --panel: #fbfaf7;          /* the "field" variant wash, for UI chrome */
+        --ink: #101418;
+        --ink-medium: #4a5058;
+        --ink-weak: #9aa0a8;
+        --ink-reference: #8a9099;
+        --line: #dcdfe3;
+        --line-faint: #ecedef;
+
+        /* Okabe-Ito blue, for interface state only. Data colour lives in JS. */
+        --accent: #0072b2;
+        --accent-ink: #004d79;
+        --accent-pale: #e9f2f8;
+
+        --figure-face: "AVHershey Simplex", system-ui, sans-serif;
+        --mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, monospace;
+
+        --topbar-h: 36px;
+        --toolbar-h: 34px;
+        --timeline-h: 40px;
+        --status-h: 24px;
+        --sidebar-w: 250px;
+
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 13px;
+        color: var(--ink);
+        background: var(--paper);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body,
+      #app {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+      }
+
+      button,
+      input,
+      select,
+      output {
+        font: inherit;
+        color: inherit;
+      }
+
+      button,
+      select,
+      input[type="search"] {
+        min-height: 26px;
+        border: 1px solid var(--line);
+        border-radius: 2px;
+        background: var(--paper);
+      }
+
+      button {
+        padding: 0 9px;
+        cursor: pointer;
+      }
+
+      button:hover:not(:disabled),
+      select:hover:not(:disabled) {
+        border-color: var(--ink-weak);
+      }
+
+      button:disabled,
+      input:disabled,
+      select:disabled {
+        color: var(--ink-weak);
+        cursor: default;
+      }
+
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      [role="treeitem"]:focus-visible,
+      [role="separator"]:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: -1px;
+      }
+
+      input[type="search"] {
+        width: 100%;
+        padding: 0 7px;
+      }
+
+      input[type="range"] {
+        height: 20px;
+        accent-color: var(--accent);
+      }
+
+      select {
+        padding: 0 22px 0 6px;
+      }
+
+      .mono {
+        font-family: var(--mono);
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* `hidden` must beat the flex/grid display rules below. */
+      [hidden] {
+        display: none !important;
+      }
+
+      .shell {
+        display: grid;
+        grid-template-rows: var(--topbar-h) minmax(0, 1fr) var(--status-h);
+        width: 100%;
+        height: 100%;
+        background: var(--paper);
+      }
+
+      .topbar,
+      .contextbar,
+      .statusbar,
+      .timeline-bar {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        background: var(--panel);
+      }
+
+      .topbar {
+        gap: 7px;
+        padding: 0 8px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .brand {
+        flex: none;
+        font-family: var(--figure-face);
+        font-size: 17px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+      }
+
+      .path {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--ink-medium);
+      }
+
+      .topbar .path {
+        flex: 1;
+        font-size: 12px;
+      }
+
+      .crumb {
+        min-height: 0;
+        padding: 1px 3px;
+        border: 0;
+        background: transparent;
+        color: var(--ink-medium);
+      }
+
+      .crumb:hover {
+        color: var(--ink);
+        text-decoration: underline;
+      }
+
+      .crumb.current {
+        color: var(--ink);
+        font-weight: 650;
+      }
+
+      .sep {
+        flex: none;
+        width: 1px;
+        height: 18px;
+        margin: 0 1px;
+        background: var(--line);
+      }
+
+      .icon-button {
+        width: 26px;
+        padding: 0;
+        font-family: var(--mono);
+        line-height: 1;
+      }
+
+      .segmented {
+        display: inline-flex;
+        flex: none;
+      }
+
+      .segmented button {
+        border-radius: 0;
+        margin-left: -1px;
+        background: var(--paper);
+      }
+
+      .segmented button:first-child {
+        margin-left: 0;
+        border-radius: 2px 0 0 2px;
+      }
+
+      .segmented button:last-child {
+        border-radius: 0 2px 2px 0;
+      }
+
+      .segmented button[aria-pressed="true"] {
+        position: relative;
+        z-index: 1;
+        border-color: var(--accent);
+        background: var(--accent-pale);
+        color: var(--accent-ink);
+        font-weight: 650;
+      }
+
+      .contextbar {
+        flex: none;
+        min-height: var(--toolbar-h);
+        padding: 0 8px 0 0;
+        border-bottom: 1px solid var(--line);
+        gap: 6px;
+      }
+
+      .contextbar .spacer {
+        flex: 1 1 0;
+        min-width: 0;
+      }
+
+      /* Narrow windows scroll the control cluster rather than clipping it. */
+      .control-group {
+        display: flex;
+        flex: 0 1 auto;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        padding-left: 6px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+      }
+
+      .control-group::-webkit-scrollbar {
+        display: none;
+      }
+
+      .control-group > * {
+        flex: none;
+      }
+
+      .inline-control {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        color: var(--ink-medium);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+
+      .inline-control input[type="range"] {
+        width: 72px;
+      }
+
+      .inline-control output {
+        min-width: 15px;
+        text-align: right;
+      }
+
+      .view-tabs {
+        display: flex;
+        align-self: stretch;
+      }
+
+      .view-tabs button {
+        min-height: 0;
+        padding: 0 14px;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        border-radius: 0;
+        background: transparent;
+        color: var(--ink-medium);
+      }
+
+      .view-tabs button[aria-selected="true"] {
+        border-bottom-color: var(--accent);
+        color: var(--ink);
+        font-weight: 650;
+      }
+
+      .statusbar {
+        padding: 0 9px;
+        border-top: 1px solid var(--line);
+        font-family: var(--mono);
+        font-variant-numeric: tabular-nums;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+
+      .statusbar > span {
+        overflow: hidden;
+        padding-right: 14px;
+        text-overflow: ellipsis;
+        color: var(--ink-medium);
+      }
+
+      .statusbar .status-probe {
+        color: var(--ink);
+      }
+
+      .statusbar .status-message {
+        flex: 1;
+        padding-right: 0;
+        text-align: right;
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: var(--sidebar-w) 5px minmax(0, 1fr);
+        min-width: 0;
+        min-height: 0;
+      }
+
+      .shell[data-sidebar="closed"] .workspace {
+        grid-template-columns: 0 0 minmax(0, 1fr);
+      }
+
+      .sidebar-grip {
+        min-height: 0;
+        padding: 0;
+        border: 0;
+        border-right: 1px solid var(--line);
+        border-radius: 0;
+        background: var(--panel);
+        cursor: col-resize;
+      }
+
+      .sidebar-grip:hover {
+        background: var(--accent-pale);
+      }
+
+      .explorer {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        background: var(--panel);
+      }
+
+      .explorer-head {
+        display: grid;
+        gap: 6px;
+        padding: 8px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .file-label {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        min-width: 0;
+      }
+
+      .file-label .name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 700;
+      }
+
+      .file-label .host {
+        flex: none;
+        color: var(--ink-weak);
+        font-size: 10px;
+      }
+
+      .tree {
+        overflow: auto;
+        padding: 4px 0 12px;
+        scrollbar-width: thin;
+      }
+
+      .tree-group,
+      .tree-item {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        height: 26px;
+        border: 0;
+        border-left: 2px solid transparent;
+        border-radius: 0;
+        background: transparent;
+        padding: 0 8px 0 calc(8px + var(--depth, 0) * 14px);
+        text-align: left;
+        white-space: nowrap;
+      }
+
+      .tree-group {
+        color: var(--ink-medium);
+        font-size: 11px;
+        font-weight: 650;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+      }
+
+      .tree-item {
+        min-width: 0;
+        cursor: pointer;
+      }
+
+      .tree-item .label {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .tree-item:hover,
+      .tree-item:focus-visible {
+        background: var(--line-faint);
+      }
+
+      .tree-item[aria-selected="true"] {
+        border-left-color: var(--accent);
+        background: var(--accent-pale);
+        color: var(--accent-ink);
+        font-weight: 650;
+      }
+
+      .tree-mark {
+        flex: none;
+        width: 16px;
+        color: var(--ink-weak);
+        font-size: 11px;
+      }
+
+      .tree-item[aria-selected="true"] .tree-mark {
+        color: var(--accent);
+      }
+
+      .tree-meta {
+        flex: none;
+        margin-left: auto;
+        padding-left: 8px;
+        color: var(--ink-weak);
+        font-family: var(--mono);
+        font-size: 10px;
+        font-weight: 400;
+      }
+
+      .tree-empty {
+        margin: 0;
+        padding: 10px 12px;
+        color: var(--ink-weak);
+        font-size: 11px;
+      }
+
+      .main {
+        display: grid;
+        grid-template-rows: var(--toolbar-h) minmax(0, 1fr) var(--timeline-h);
+        min-width: 0;
+        min-height: 0;
+      }
+
+      .stage {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        background: var(--paper);
+      }
+
+      /* ---- figure ------------------------------------------------------ */
+
+      .figure {
+        --plot-title-size: clamp(13.6px, min(1.356cqi, 2.222cqb), 18.88px);
+        --plot-subtitle-size: clamp(9.35px, min(0.932cqi, 1.528cqb), 12.98px);
+        --plot-tick-size: clamp(9.78px, min(0.975cqi, 1.597cqb), 13.57px);
+        --plot-minor-size: clamp(8.93px, min(0.89cqi, 1.458cqb), 12.39px);
+        --plot-axis-size: clamp(11.05px, min(1.102cqi, 1.806cqb), 15.34px);
+        --plot-tooltip-size: clamp(10.2px, min(1.017cqi, 1.667cqb), 14.16px);
+        --plot-overlay-size: clamp(8.5px, min(0.847cqi, 1.389cqb), 11.8px);
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-width: 0;
+        min-height: 0;
+        container-type: size;
+      }
+
+      .figure-head {
+        display: flex;
+        align-items: baseline;
+        gap: 9px;
+        min-width: 0;
+        padding: 9px 14px 2px;
+      }
+
+      .figure-title {
+        min-width: 0;
+        margin: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-family: var(--figure-face);
+        font-size: var(--plot-title-size);
+        font-weight: 700;
+        line-height: 1.1;
+      }
+
+      .figure-subtitle {
+        flex: none;
+        overflow: hidden;
+        white-space: nowrap;
+        color: var(--ink-medium);
+        font-family: var(--figure-face);
+        font-size: var(--plot-subtitle-size);
+        font-weight: 400;
+        line-height: 1.1;
+      }
+
+      .figure-subtitle sup {
+        font-size: 0.72em;
+      }
+
+      @container (max-width: 520px) {
+        .figure-head {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 1px 8px;
+          align-content: center;
+        }
+
+        .figure-title {
+          grid-column: 1;
+        }
+
+        .figure-head .badge {
+          grid-column: 2;
+          grid-row: 1;
+        }
+
+        .figure-subtitle {
+          grid-column: 1 / -1;
+          min-width: 0;
+          text-overflow: ellipsis;
+        }
+      }
+
+      .plot-frame {
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .plot-frame[data-kind="curve"] {
+        cursor: crosshair;
+      }
+
+      .field-canvas {
+        position: absolute;
+        display: block;
+        cursor: none;
+        image-rendering: pixelated;
+      }
+
+      .map-tiles {
+        position: absolute;
+        overflow: hidden;
+        pointer-events: none;
+      }
+
+      .map-tiles img {
+        position: absolute;
+        max-width: none;
+        mix-blend-mode: multiply;
+        opacity: 0.38;
+      }
+
+      .plot-svg {
+        position: absolute;
+        inset: 0;
+        display: block;
+        pointer-events: none;
+        font-family: var(--figure-face);
+      }
+
+      /* Furniture: hairlines that never reach data weight. */
+      .plot-svg .spine {
+        fill: none;
+        stroke: var(--ink-medium);
+        stroke-width: 1;
+      }
+
+      .plot-svg .tick {
+        stroke: var(--ink-medium);
+        stroke-width: 1;
+      }
+
+      .plot-svg .tick-minor {
+        stroke: var(--ink-medium);
+        stroke-width: 0.8;
+      }
+
+      .plot-svg .gridline {
+        stroke: var(--ink-weak);
+        stroke-width: 0.8;
+        opacity: 0.55;
+      }
+
+      .plot-svg .datum {
+        stroke: var(--ink-reference);
+        stroke-width: 1.2;
+        stroke-dasharray: 4 3;
+      }
+
+      .plot-svg .ticklabel {
+        fill: var(--ink);
+        font-size: var(--plot-tick-size);
+        font-weight: 400;
+      }
+
+      .plot-svg .ticklabel-minor {
+        fill: var(--ink-medium);
+        font-size: var(--plot-minor-size);
+        font-weight: 400;
+      }
+
+      .plot-svg .axislabel,
+      .plot-svg .legend-label {
+        fill: var(--ink);
+        font-size: var(--plot-axis-size);
+        font-weight: 400;
+      }
+
+      /* Data: Style's weights, scaled for screen. 1.3 / 1.7 / 2.3. */
+      .plot-svg .series-primary {
+        fill: none;
+        stroke-width: 2.3;
+        stroke-linejoin: round;
+        stroke-linecap: round;
+      }
+
+      .plot-svg .series-model {
+        fill: none;
+        stroke-width: 1.3;
+        stroke-dasharray: 7 3.5;
+        stroke-linecap: round;
+      }
+
+      .plot-svg .cursor-line {
+        stroke: var(--accent);
+        stroke-width: 1.2;
+      }
+
+      .plot-svg .hover-crosshair {
+        stroke: var(--ink);
+        stroke-width: 0.8;
+      }
+
+      .plot-svg .hover-dot {
+        stroke: var(--paper);
+        stroke-width: 1.5;
+      }
+
+      .plot-svg .sample-dot {
+        stroke: var(--paper);
+        stroke-width: 1.5;
+      }
+
+      .plot-svg .tooltip-box {
+        fill: #ffffff;
+        fill-opacity: 0.94;
+        stroke: var(--ink-weak);
+        stroke-width: 0.8;
+      }
+
+      .plot-svg .tooltip-text {
+        fill: var(--ink);
+        font-family: var(--mono);
+        font-size: var(--plot-tooltip-size);
+      }
+
+      .plot-svg .tooltip-heading {
+        font-weight: 700;
+      }
+
+      .plot-svg .cb-frame {
+        fill: none;
+        stroke: var(--ink-medium);
+        stroke-width: 1;
+      }
+
+      .probe-readout,
+      .map-attribution {
+        position: absolute;
+        pointer-events: none;
+      }
+
+      .probe-readout {
+        padding: 2px 5px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.9);
+        font-family: var(--mono);
+        font-variant-numeric: tabular-nums;
+        font-size: var(--plot-overlay-size);
+      }
+
+      .map-attribution {
+        padding: 1px 4px;
+        background: rgba(255, 255, 255, 0.82);
+        color: var(--ink-medium);
+        font-size: 9px;
+      }
+
+      /* ---- metadata ---------------------------------------------------- */
+
+      .metadata {
+        min-height: 0;
+        overflow: auto;
+        padding: 12px 16px 40px;
+        scrollbar-width: thin;
+      }
+
+      .metadata h2 {
+        margin: 0 0 14px;
+        font-family: var(--mono);
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .metadata table {
+        width: 100%;
+        max-width: 720px;
+        margin-bottom: 22px;
+        border-collapse: collapse;
+        text-align: left;
+      }
+
+      .metadata caption {
+        padding: 4px 0;
+        border-bottom: 1px solid var(--ink-medium);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-align: left;
+        text-transform: uppercase;
+      }
+
+      .metadata th,
+      .metadata td {
+        padding: 6px 8px 6px 0;
+        border-bottom: 1px solid var(--line-faint);
+        vertical-align: top;
+      }
+
+      .metadata th {
+        width: 150px;
+        color: var(--ink-medium);
+        font-weight: 400;
+      }
+
+      .metadata td {
+        font-family: var(--mono);
+        overflow-wrap: anywhere;
+      }
+
+      .metadata sup {
+        font-size: 0.72em;
+      }
+
+      .badge {
+        display: inline-block;
+        padding: 1px 5px;
+        border: 1px solid var(--line);
+        border-radius: 2px;
+        background: var(--paper);
+        color: var(--ink-medium);
+        font-size: 10px;
+        white-space: nowrap;
+      }
+
+      /* ---- timeline ---------------------------------------------------- */
+
+      .timeline-bar {
+        gap: 8px;
+        padding: 0 10px;
+        border-top: 1px solid var(--line);
+      }
+
+      .timeline-bar input[type="range"] {
+        flex: 1;
+        min-width: 80px;
+      }
+
+      .transport {
+        display: inline-flex;
+        flex: none;
+      }
+
+      .transport button {
+        width: 28px;
+        padding: 0;
+        margin-left: -1px;
+        border-radius: 0;
+        font-family: var(--mono);
+        font-size: 11px;
+        line-height: 1;
+      }
+
+      .transport button:first-child {
+        margin-left: 0;
+        border-radius: 2px 0 0 2px;
+      }
+
+      .transport button:last-child {
+        border-radius: 0 2px 2px 0;
+      }
+
+      .transport button[aria-pressed="true"] {
+        position: relative;
+        z-index: 1;
+        border-color: var(--accent);
+        background: var(--accent-pale);
+        color: var(--accent-ink);
+      }
+
+      .time-output {
+        flex: none;
+        min-width: 214px;
+        text-align: right;
+        font-size: 11px;
+      }
+
+      .dim-label {
+        flex: none;
+        color: var(--ink-medium);
+        font-size: 11px;
+      }
+
+      @media (max-width: 1080px) {
+        .time-output {
+          min-width: 88px;
+        }
+
+        .time-output .stamp {
+          display: none;
+        }
+      }
+
+      /* The level slider is the first control to go: it has a keyboard and a
+         status readout elsewhere, the colour controls do not. */
+      @media (max-width: 1000px) {
+        .contextbar .inline-control {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main id="app"></main>
+    <script>
+      "use strict";
+
+      // ----------------------------------------------------------------
+      // Mock dataset. `domain` is the colour range in data units and
+      // `zeroMeaningful` decides diverging versus sequential -- Guidance 5.
+      // ----------------------------------------------------------------
+      const VARIABLES = {
+        "/ocean/temperature": {
+          label: "temperature",
+          quantity: "Sea water potential temperature",
+          axisTitle: "Potential temperature",
+          dtype: "float32",
+          shape: "241 × 20 × 2000 × 3000",
+          statusShape: "241 × 20 × dim(x=2000,y=3000)",
+          dims: "time, level, y, x",
+          gridShape: { x: 2000, y: 3000 },
+          unit: { base: "°C" },
+          hint: "curvilinear",
+          domain: [-2.4, 31.8],
+          zeroMeaningful: false,
+          time: { startMs: Date.UTC(2024, 6, 24, 16), stepMs: 3600000, zone: "HKT", offsetMinutes: 480 },
+        },
+        "/ocean/sea_surface_height": {
+          label: "sea_surface_height",
+          quantity: "Sea surface height above geoid",
+          axisTitle: "Water level",
+          dtype: "float32",
+          shape: "241 × 184320",
+          statusShape: "241 × dim(node=184320)",
+          dims: "time, node",
+          gridShape: { node: 184320 },
+          unit: { base: "m" },
+          hint: "UGRID node",
+          domain: [-2.5, 2.5],
+          zeroMeaningful: true,
+          surge: true,
+          time: { startMs: Date.UTC(2024, 6, 25, 0), stepMs: 3600000, zone: "UTC", offsetMinutes: 0 },
+        },
+        "/wind/u10": {
+          label: "u10",
+          quantity: "Eastward wind at 10 m",
+          axisTitle: "Eastward wind",
+          dtype: "int16 → float32",
+          shape: "241 × 2000 × 3000",
+          statusShape: "241 × dim(x=2000,y=3000)",
+          dims: "time, y, x",
+          gridShape: { x: 2000, y: 3000 },
+          unit: { base: "m s", exp: "-1" },
+          hint: "curvilinear",
+          domain: [-48, 54],
+          zeroMeaningful: true,
+          time: { startMs: Date.UTC(2024, 6, 25, 0), stepMs: 3600000, zone: "UTC", offsetMinutes: 0 },
+        },
+        "/bathymetry/depth": {
+          label: "depth",
+          quantity: "Depth below mean sea level",
+          axisTitle: "Depth below MSL",
+          dtype: "float32",
+          shape: "2000 × 3000",
+          statusShape: "dim(x=2000,y=3000)",
+          dims: "y, x",
+          gridShape: { x: 2000, y: 3000 },
+          unit: { base: "m" },
+          hint: "rectilinear",
+          domain: [0, 5630],
+          zeroMeaningful: false,
+        },
+      };
+
+      const TIME_LENGTH = 241;
+      const FIELD_BOUNDS = { west: 110, east: 122, south: 17, north: 24 };
+
+      const query = new URL(location.href).searchParams;
+      const requested = query.get("variable");
+
+      const state = {
+        mode: "display",
+        view: query.get("view") === "curve" ? "curve" : "field",
+        variable: VARIABLES[requested] ? requested : "/ocean/temperature",
+        time: 99,
+        level: 4,
+        cmap: null,        // null = follow the data, see resolvedCmap
+        scale: "linear",
+        map: "carto-positron",
+        playDirection: 0,
+        sidebar: true,
+        sidebarWidth: 250,
+        message: "full resolution · 24.0 MB · read 41 ms",
+        probe: null,       // set on field hover
+        hover: null,       // curve hover index
+        hoverX: null,
+      };
+
+      // ----------------------------------------------------------------
+      // Colour. Stops copied from Style/plotstyle/palette.py; cividis is
+      // sampled from matplotlib at 10 stops so the ramp interpolates cleanly.
+      // ----------------------------------------------------------------
+      const PALETTES = {
+        balance: ["#0B3D62", "#2A6F97", "#7BAEC9", "#D6DCE0", "#E8B08A", "#C25A3C", "#7A2216"],
+        cividis: ["#00204C", "#00336F", "#39486B", "#575D6D", "#707173", "#8A8779", "#A69D75", "#C4B56C", "#E4CF5B", "#FFEA46"],
+        depth: ["#F2F5F7", "#BFD6E4", "#7FB0CC", "#4585AC", "#22597F", "#0C3050"],
+      };
+
+      const CMAP_LABEL = {
+        cividis: "cividis (sequential)",
+        depth: "depth (sequential)",
+        balance: "balance (diverging)",
+      };
+
+      // Bound to quantities, not to plots. From palette.SEMANTIC.
+      const SEMANTIC = {
+        total: "#101418",     // ink: what was measured
+        tide: "#0072B2",      // blue: what was computed
+        surge: "#D55E00",     // vermillion: the residual between them
+      };
+
+      const lutCache = new Map();
+
+      function hexToRgb(hex) {
+        const value = Number.parseInt(hex.slice(1), 16);
+        return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+      }
+
+      /** 256-entry lookup table, built once per colormap. */
+      function lut(name) {
+        if (lutCache.has(name)) return lutCache.get(name);
+        const stops = (PALETTES[name] || PALETTES.cividis).map(hexToRgb);
+        const table = new Uint8ClampedArray(256 * 3);
+        for (let i = 0; i < 256; i += 1) {
+          const scaled = (i / 255) * (stops.length - 1);
+          const lo = Math.min(stops.length - 2, Math.floor(scaled));
+          const mix = scaled - lo;
+          for (let c = 0; c < 3; c += 1) {
+            table[i * 3 + c] = stops[lo][c] + (stops[lo + 1][c] - stops[lo][c]) * mix;
+          }
+        }
+        lutCache.set(name, table);
+        return table;
+      }
+
+      // ----------------------------------------------------------------
+      // Numbers. Ticks snap to 1 / 2 / 2.5 / 5 x 10^n, as ps.nice_levels does,
+      // so no reader has to hold 3.167 in their head.
+      // ----------------------------------------------------------------
+      function niceStep(raw) {
+        if (!(raw > 0)) return 1;
+        const base = 10 ** Math.floor(Math.log10(raw));
+        const mantissa = raw / base;
+        const snapped = mantissa <= 1 ? 1 : mantissa <= 2 ? 2 : mantissa <= 2.5 ? 2.5 : mantissa <= 5 ? 5 : 10;
+        return snapped * base;
+      }
+
+      function niceRange(lo, hi, count = 6) {
+        if (!(hi > lo)) return [lo, lo + 1];
+        const step = niceStep((hi - lo) / count);
+        return [Math.floor(lo / step) * step, Math.ceil(hi / step) * step];
+      }
+
+      function niceTicks(lo, hi, count = 6) {
+        if (!(hi > lo)) return [lo];
+        const step = niceStep((hi - lo) / count);
+        const ticks = [];
+        for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + step * 1e-9; v += step) {
+          ticks.push(Math.abs(v) < step * 1e-9 ? 0 : v);
+        }
+        return ticks;
+      }
+
+      function tickStep(ticks) {
+        return ticks.length > 1 ? Math.abs(ticks[1] - ticks[0]) : 1;
+      }
+
+      /** Significant figures follow the tick spacing, never the float noise. */
+      function formatTick(value, step) {
+        const decimals = Math.max(0, Math.min(4, -Math.floor(Math.log10(step) + 1e-9)));
+        const text = value.toFixed(decimals);
+        return /^-0(\.0+)?$/.test(text) ? text.slice(1) : text;
+      }
+
+      function clamp(value, lo, hi) {
+        return value < lo ? lo : value > hi ? hi : value;
+      }
+
+      function pad2(value) {
+        return String(value).padStart(2, "0");
+      }
+
+      function esc(value) {
+        return String(value).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+      }
+
+      // ----------------------------------------------------------------
+      // Units. AVHershey Simplex carries no superscript glyphs, so an exponent
+      // is drawn as a raised run -- and the baseline is put back afterwards,
+      // or everything that follows floats.
+      // ----------------------------------------------------------------
+      function unitText(unit) {
+        return unit.exp ? `${unit.base}${unit.exp}` : unit.base;
+      }
+
+      function unitHtml(unit) {
+        return unit.exp ? `${esc(unit.base)}<sup>${esc(unit.exp)}</sup>` : esc(unit.base);
+      }
+
+      function unitSvg(unit) {
+        if (!unit.exp) return esc(unit.base);
+        return `${esc(unit.base)}<tspan dy="-0.34em" font-size="0.72em">${esc(unit.exp)}</tspan><tspan dy="0.34em"></tspan>`;
+      }
+
+      // ----------------------------------------------------------------
+      // Variable helpers
+      // ----------------------------------------------------------------
+      function currentVariable() {
+        return VARIABLES[state.variable];
+      }
+
+      function dimList(v = currentVariable()) {
+        return v.dims.split(",").map((d) => d.trim());
+      }
+
+      function hasTime(v = currentVariable()) {
+        return dimList(v).includes("time");
+      }
+
+      function hasLevel(v = currentVariable()) {
+        return dimList(v).includes("level");
+      }
+
+      /** Colormap chosen by the data unless the user overrode it. */
+      function resolvedCmap(v = currentVariable()) {
+        if (state.cmap) return state.cmap;
+        if (v.zeroMeaningful) return "balance";
+        if (v.label === "depth") return "depth";
+        return "cividis";
+      }
+
+      /**
+       * Colour limits in data units. A diverging map gets symmetric limits, or
+       * the colour lies about where zero is (Guidance 5).
+       */
+      function colorDomain(v = currentVariable()) {
+        const [lo, hi] = v.domain;
+        if (resolvedCmap(v) === "balance") {
+          const peak = Math.max(Math.abs(lo), Math.abs(hi));
+          const snapped = niceRange(-peak, peak, 6);
+          const bound = Math.max(Math.abs(snapped[0]), Math.abs(snapped[1]));
+          return [-bound, bound];
+        }
+        return niceRange(lo, hi);
+      }
+
+      function timeParts(index, v = currentVariable()) {
+        const t = v.time;
+        if (!t || !Number.isFinite(t.startMs) || !Number.isFinite(t.stepMs)) return null;
+        const local = new Date(t.startMs + index * t.stepMs + t.offsetMinutes * 60000);
+        return {
+          year: local.getUTCFullYear(),
+          month: local.getUTCMonth(),
+          day: local.getUTCDate(),
+          hour: local.getUTCHours(),
+          minute: local.getUTCMinutes(),
+          zone: t.zone,
+        };
+      }
+
+      function timestampLabel(index, v = currentVariable()) {
+        const p = timeParts(index, v);
+        if (!p) return null;
+        return `${p.year}-${pad2(p.month + 1)}-${pad2(p.day)} ${pad2(p.hour)}:${pad2(p.minute)} ${p.zone}`;
+      }
+
+      /** The title identifies the panel; a caption would argue. Sentence case. */
+      function plotTitle(v = currentVariable()) {
+        if (!hasTime(v)) return v.axisTitle;
+        return `${v.axisTitle}, ${timestampLabel(state.time, v) || `timestep ${state.time}`}`;
+      }
+
+      function timeOutput() {
+        const stamp = timestampLabel(state.time);
+        const counter = `${state.time} / ${TIME_LENGTH - 1}`;
+        return stamp ? `${counter} <span class="stamp">· ${esc(stamp)}</span>` : counter;
+      }
+
+      // ----------------------------------------------------------------
+      // Projection. The field is drawn in Web Mercator so the tile overlay
+      // registers exactly and latitude ticks land where they belong.
+      // ----------------------------------------------------------------
+      function mercY(lat) {
+        const r = (clamp(lat, -85, 85) * Math.PI) / 180;
+        return Math.log(Math.tan(r) + 1 / Math.cos(r));
+      }
+
+      const MERC = {
+        left: FIELD_BOUNDS.west,
+        right: FIELD_BOUNDS.east,
+        top: mercY(FIELD_BOUNDS.north),
+        bottom: mercY(FIELD_BOUNDS.south),
+      };
+
+      /** Width / height of the data area, so the map is never stretched. */
+      function fieldAspect() {
+        return (((MERC.right - MERC.left) * Math.PI) / 180) / (MERC.top - MERC.bottom);
+      }
+
+      function lonToFrac(lon) {
+        return (lon - MERC.left) / (MERC.right - MERC.left);
+      }
+
+      function latToFrac(lat) {
+        return (MERC.top - mercY(lat)) / (MERC.top - MERC.bottom);
+      }
+
+      function fracToLon(frac) {
+        return MERC.left + frac * (MERC.right - MERC.left);
+      }
+
+      function fracToLat(frac) {
+        return (Math.atan(Math.sinh(MERC.top - frac * (MERC.top - MERC.bottom))) * 180) / Math.PI;
+      }
+
+      // ----------------------------------------------------------------
+      // Mock data
+      // ----------------------------------------------------------------
+      /** Unit-free field over normalised plot coordinates. */
+      function scalarAt(x, y, time = state.time) {
+        const phase = time * 0.035;
+        const depthFactor = 1 - state.level / 30;
+        const dx = x + 0.18;
+        const dy = y - 0.06;
+        const radius = Math.hypot(dx, dy);
+        const angle = Math.atan2(dy, dx);
+        return (
+          1.5 * depthFactor * Math.exp(-2.8 * radius * radius) * Math.sin(7 * radius - phase + angle) +
+          0.65 * x - 0.22 * y + 0.25 * Math.sin(5 * y + phase * 0.4)
+        );
+      }
+
+      /** The same field, expressed in the selected variable's own units. */
+      function fieldValue(x, y, domain) {
+        const normalized = clamp((scalarAt(x, y) + 2.5) / 5, 0, 1);
+        return domain[0] + normalized * (domain[1] - domain[0]);
+      }
+
+      function curveDomain(v = currentVariable()) {
+        return v.surge ? [-2.5, 3.5] : niceRange(v.domain[0], v.domain[1], 5);
+      }
+
+      /**
+       * Tide / total pair. Solid is measured, dashed is computed, and the
+       * residual is the area between them (Guidance 7).
+       */
+      function curveValue(index, v = currentVariable()) {
+        const [lo, hi] = curveDomain(v);
+        const span = hi - lo;
+        const probe = state.probe || { fx: 0.5, fy: 0.5 };
+        const x = probe.fx * 2 - 1;
+        const y = 1 - probe.fy * 2;
+        const total = lo + clamp((scalarAt(x, y, index) + 2.5) / 5, 0, 1) * span;
+        const phase = (probe.fx - 0.5) * Math.PI + (probe.fy - 0.5) * 0.8;
+        const tide = lo + span * (0.45 + 0.18 * Math.sin((index / 12) * Math.PI + phase));
+        return { tide, total };
+      }
+
+      function curveSeriesNames(v = currentVariable()) {
+        return v.surge
+          ? { primary: "Observed total", model: "Astronomical tide", residual: "Surge residual" }
+          : { primary: "Value", model: "Daily mean", residual: "Anomaly" };
+      }
+
+      // ----------------------------------------------------------------
+      // Markup
+      // ----------------------------------------------------------------
+      function modeToggle() {
+        return `<div class="segmented" role="group" aria-label="Viewer mode">
+          <button type="button" data-mode="display" aria-pressed="${state.mode === "display"}">Display</button>
+          <button type="button" data-mode="inspect" aria-pressed="${state.mode === "inspect"}">Inspect</button>
+        </div>`;
+      }
+
+      function viewTabs() {
+        const noTime = !hasTime();
+        return `<div class="view-tabs" role="tablist" aria-label="Visualization">
+          <button type="button" role="tab" data-view="field" aria-selected="${state.mode === "display" && state.view === "field"}">Field</button>
+          <button type="button" role="tab" data-view="curve" ${noTime ? "disabled" : ""} aria-selected="${state.mode === "display" && state.view === "curve" && !noTime}" title="${noTime ? "This variable has no time dimension" : "Series through time at the probed point"}">Curve</button>
+        </div>`;
+      }
+
+      const TREE = [
+        { group: "ocean", items: [
+          { path: "/ocean/temperature", mark: "▦", meta: "f32", search: "temperature ocean float32 curvilinear" },
+          { path: "/ocean/sea_surface_height", mark: "△", meta: "f32", search: "sea surface height ssh ocean float32 ugrid" },
+        ] },
+        { group: "wind", items: [
+          { path: "/wind/u10", mark: "▦", meta: "i16", search: "wind u10 eastward int16" },
+        ] },
+        { group: "bathymetry", items: [
+          { path: "/bathymetry/depth", mark: "▦", meta: "f32", search: "bathymetry depth float32 rectilinear" },
+        ] },
+        { group: "mesh", collapsed: "4 vars", items: [] },
+        { group: "coordinates", collapsed: "6 vars", items: [] },
+      ];
+
+      function tree() {
+        const body = TREE.map((node) => {
+          const head = `<div class="tree-group" style="--depth:0" data-group="${node.group}"><span class="tree-mark">${node.collapsed ? "▸" : "▾"}</span>${node.group}${node.collapsed ? `<span class="tree-meta">${node.collapsed}</span>` : ""}</div>`;
+          const items = node.items.map((item) => {
+            const v = VARIABLES[item.path];
+            return `<button class="tree-item" style="--depth:1" role="treeitem" data-variable-path="${item.path}" data-search="${item.search}" aria-selected="${item.path === state.variable}" title="${esc(v.label)} (${esc(v.dims)})"><span class="tree-mark">${item.mark}</span><span class="label">${esc(v.label)}</span><span class="tree-meta">${item.meta}</span></button>`;
+          }).join("");
+          return head + items;
+        }).join("");
+        return `<div class="tree" role="tree" aria-label="Dataset contents">${body}<p class="tree-empty" data-tree-empty hidden>No variable matches the filter.</p></div>`;
+      }
+
+      function explorer() {
+        return `<aside class="explorer" aria-label="Dataset explorer">
+          <div class="explorer-head">
+            <div class="file-label"><span class="name mono">run.nc</span><span class="host mono">gpu03:/data</span></div>
+            <input type="search" data-tree-filter placeholder="Filter variables" aria-label="Filter variables" />
+          </div>
+          ${tree()}
+        </aside>`;
+      }
+
+      /**
+       * Only the controls that act on what is on screen. A colormap select
+       * beside a line plot is a control that lies about what it does.
+       */
+      function toolbarControls() {
+        const v = currentVariable();
+        const buttons = `<button type="button" data-action="reset" title="Reset time, level and colour">Reset</button>
+          <button type="button" data-action="png" title="Export the current figure">PNG</button>`;
+        if (state.mode === "inspect") return buttons;
+        if (state.view === "curve" && hasTime(v)) return buttons;
+
+        const logBlocked = colorDomain(v)[0] <= 0;
+        const levelControl = hasLevel(v)
+          ? `<label class="inline-control">level
+              <input type="range" min="0" max="19" value="${state.level}" data-level aria-label="Level index" />
+              <output class="mono" data-level-output>${state.level}</output>
+            </label>
+            <span class="sep"></span>`
+          : "";
+        return `${levelControl}
+          <select data-map aria-label="Map overlay">
+            <option value="none" ${state.map === "none" ? "selected" : ""}>map: none</option>
+            <option value="carto-positron" ${state.map === "carto-positron" ? "selected" : ""}>map: OSM · Positron</option>
+          </select>
+          <select data-cmap aria-label="Colormap" title="auto follows the data: diverging only where zero is a real reference">
+            <option value="" ${state.cmap === null ? "selected" : ""}>auto: ${CMAP_LABEL[resolvedCmap(v)]}</option>
+            <option value="cividis" ${state.cmap === "cividis" ? "selected" : ""}>cividis</option>
+            <option value="depth" ${state.cmap === "depth" ? "selected" : ""}>depth</option>
+            <option value="balance" ${state.cmap === "balance" ? "selected" : ""}>balance</option>
+          </select>
+          <select data-scale aria-label="Colour scale">
+            <option value="linear" ${state.scale === "linear" ? "selected" : ""}>linear</option>
+            <option value="log" ${state.scale === "log" ? "selected" : ""} ${logBlocked ? "disabled" : ""}>log${logBlocked ? " (needs a positive range)" : ""}</option>
+            <option value="symlog" ${state.scale === "symlog" ? "selected" : ""}>symlog</option>
+          </select>
+          <span class="sep"></span>
+          ${buttons}`;
+      }
+
+      function mapTileMarkup() {
+        if (state.map !== "carto-positron") return "";
+        const zoom = 7;
+        const size = 256;
+        const world = size * 2 ** zoom;
+        const worldX = (lon) => ((lon + 180) / 360) * world;
+        const worldY = (lat) => ((1 - mercY(lat) / Math.PI) / 2) * world;
+        const left = worldX(FIELD_BOUNDS.west);
+        const right = worldX(FIELD_BOUNDS.east);
+        const top = worldY(FIELD_BOUNDS.north);
+        const bottom = worldY(FIELD_BOUNDS.south);
+        const w = (size / (right - left)) * 100;
+        const h = (size / (bottom - top)) * 100;
+        const tiles = [];
+        for (let x = Math.floor(left / size); x <= Math.floor(right / size); x += 1) {
+          for (let y = Math.floor(top / size); y <= Math.floor(bottom / size); y += 1) {
+            const sub = "abcd"[(x + y) % 4];
+            const style = `left:${(((x * size - left) / (right - left)) * 100).toFixed(3)}%;top:${(((y * size - top) / (bottom - top)) * 100).toFixed(3)}%;width:${w.toFixed(3)}%;height:${h.toFixed(3)}%`;
+            // A dead CDN must not leave broken-image glyphs over the data.
+            tiles.push(`<img alt="" draggable="false" onerror="this.remove()" src="https://${sub}.basemaps.cartocdn.com/light_all/${zoom}/${x}/${y}.png" style="${style}" />`);
+          }
+        }
+        return `<div class="map-tiles" data-map-tiles aria-hidden="true">${tiles.join("")}</div>`;
+      }
+
+      function fieldFigure() {
+        const v = currentVariable();
+        const subtitle = fieldSubtitle(v);
+        return `<section class="figure" aria-label="Field visualization">
+          <header class="figure-head">
+            <h1 class="figure-title" data-figure-title>${esc(plotTitle(v))}</h1>
+            <span class="badge">${esc(v.hint)}</span>
+            <span class="figure-subtitle">${subtitle}</span>
+          </header>
+          <div class="plot-frame" data-plot-frame data-kind="field">
+            <canvas class="field-canvas" data-field-canvas aria-label="Mock ${esc(v.label)} field over longitude and latitude"></canvas>
+            ${mapTileMarkup()}
+            <svg class="plot-svg" data-plot-svg xmlns="http://www.w3.org/2000/svg"></svg>
+            <output class="probe-readout" data-probe hidden></output>
+            ${state.map === "carto-positron" ? `<span class="map-attribution" data-attribution>© OpenStreetMap contributors · © CARTO</span>` : ""}
+          </div>
+        </section>`;
+      }
+
+      function fieldSubtitle(v = currentVariable()) {
+        return [
+          unitHtml(v.unit),
+          "Web Mercator",
+          state.scale === "linear" ? null : `${state.scale} colour`,
+          "preview stride 2",
+        ].filter(Boolean).join(" · ");
+      }
+
+      function curveFigure() {
+        const v = currentVariable();
+        const at = state.probe
+          ? `at ${state.probe.lon.toFixed(2)}°E, ${state.probe.lat.toFixed(2)}°N`
+          : "at the field centre · probe the field view to move it";
+        return `<section class="figure" aria-label="Series through time">
+          <header class="figure-head">
+            <h1 class="figure-title" data-figure-title>${esc(v.axisTitle)}</h1>
+            <span class="figure-subtitle">${esc(at)}</span>
+          </header>
+          <div class="plot-frame" data-plot-frame data-kind="curve">
+            <svg class="plot-svg" data-plot-svg xmlns="http://www.w3.org/2000/svg"></svg>
+          </div>
+        </section>`;
+      }
+
+      function metadataView() {
+        const v = currentVariable();
+        const domain = colorDomain(v);
+        const step = niceStep((domain[1] - domain[0]) / 6);
+        const rows = (pairs) => pairs.map(([k, value]) => `<tr><th>${esc(k)}</th><td>${value}</td></tr>`).join("");
+        return `<section class="metadata" aria-label="Variable metadata">
+          <h2>${esc(state.variable)}</h2>
+          <table>
+            <caption>Variable</caption>
+            <tbody>${rows([
+              ["dtype", esc(v.dtype)],
+              ["shape", esc(v.shape)],
+              ["dimensions", esc(v.dims)],
+              ["view hint", esc(v.hint)],
+              ["coordinates", "/coordinates/lon /coordinates/lat"],
+            ])}</tbody>
+          </table>
+          <table>
+            <caption>Attributes</caption>
+            <tbody>${rows([
+              ["long_name", esc(v.quantity)],
+              ["units", unitHtml(v.unit)],
+              ["valid_range", `${v.domain[0]} to ${v.domain[1]}`],
+              ["_FillValue", "9.96921e+36"],
+              ["scale_factor", "0.01"],
+              ["add_offset", "273.15"],
+            ])}</tbody>
+          </table>
+          <table>
+            <caption>Display</caption>
+            <tbody>${rows([
+              ["colormap", `${esc(CMAP_LABEL[resolvedCmap(v)])} · ${state.cmap ? "overridden" : "auto"}`],
+              ["colour limits", `${formatTick(domain[0], step)} to ${formatTick(domain[1], step)} ${unitHtml(v.unit)}`],
+              ["colour scale", esc(state.scale)],
+            ])}</tbody>
+          </table>
+        </section>`;
+      }
+
+      function activeVisualization() {
+        if (state.mode === "inspect") return metadataView();
+        if (state.view === "curve" && hasTime()) return curveFigure();
+        return fieldFigure();
+      }
+
+      function probeText() {
+        if (!state.probe) return "no probe";
+        return `${state.probe.lon.toFixed(2)}°E ${state.probe.lat.toFixed(2)}°N  ${state.probe.value.toFixed(2)} ${unitText(currentVariable().unit)}`;
+      }
+
+      function probeIndexText() {
+        const v = currentVariable();
+        if (!state.probe || !v.gridShape.x) return "i=--  j=--";
+        const i = Math.round(state.probe.fx * (v.gridShape.x - 1));
+        const j = Math.round((1 - state.probe.fy) * (v.gridShape.y - 1));
+        return `i=${i}  j=${j}`;
+      }
+
+      function statusBar() {
+        return `<footer class="statusbar" aria-live="polite">
+          <span data-status-index>${probeIndexText()}</span>
+          <span class="status-probe" data-status-probe>${probeText()}</span>
+          <span>shape ${esc(currentVariable().statusShape)}</span>
+          <span class="status-message" data-status-message>${esc(state.message)}</span>
+        </footer>`;
+      }
+
+      function topPath() {
+        const parts = state.variable.split("/").filter(Boolean);
+        return `<nav class="path mono" aria-label="Selected variable path">
+          <button class="crumb" type="button">run.nc</button> /
+          <button class="crumb" type="button">${esc(parts[0])}</button> /
+          <button class="crumb current" type="button" aria-current="true">${esc(parts[1])}</button>
+        </nav>`;
+      }
+
+      function timelineBar() {
+        const off = hasTime() ? "" : "disabled";
+        return `<div class="timeline-bar" role="group" aria-label="Time navigation">
+          <div class="transport" role="group" aria-label="Playback">
+            <button type="button" data-action="first" ${off} aria-label="First timestep" title="First timestep (Home)">|◀</button>
+            <button type="button" data-action="reverse" ${off} aria-pressed="${state.playDirection === -1}" aria-label="Play backward" title="Play backward">◀◀</button>
+            <button type="button" data-action="step-back" ${off} aria-label="Step backward" title="Step backward (←)">◀</button>
+            <button type="button" data-action="stop" ${off} aria-pressed="${state.playDirection === 0}" aria-label="Stop playback" title="Stop (space)">■</button>
+            <button type="button" data-action="step-forward" ${off} aria-label="Step forward" title="Step forward (→)">▶</button>
+            <button type="button" data-action="forward" ${off} aria-pressed="${state.playDirection === 1}" aria-label="Play forward" title="Play forward">▶▶</button>
+            <button type="button" data-action="last" ${off} aria-label="Last timestep" title="Last timestep (End)">▶|</button>
+          </div>
+          <span class="dim-label">time</span>
+          <input id="time-slider" type="range" min="0" max="${TIME_LENGTH - 1}" value="${state.time}" data-time ${off} aria-label="Time index" />
+          <output class="time-output mono" data-time-output for="time-slider">${off ? "static variable" : timeOutput()}</output>
+        </div>`;
+      }
+
+      function renderShell() {
+        return `<div class="shell" data-sidebar="${state.sidebar ? "open" : "closed"}" style="--sidebar-w:${state.sidebarWidth}px">
+          <header class="topbar">
+            <button type="button" class="icon-button" data-action="sidebar" aria-label="Toggle dataset explorer" aria-expanded="${state.sidebar}" title="Toggle explorer">☰</button>
+            <span class="brand">ncx</span>
+            <span class="sep"></span>
+            ${topPath()}
+            ${modeToggle()}
+            <button type="button" data-action="fullscreen" title="Fullscreen">Fullscreen</button>
+          </header>
+          <div class="workspace">
+            ${explorer()}
+            <div class="sidebar-grip" data-sidebar-grip role="separator" aria-orientation="vertical" aria-label="Resize explorer" tabindex="0"></div>
+            <section class="main">
+              <div class="contextbar">
+                ${viewTabs()}
+                <span class="spacer"></span>
+                <div class="control-group">${toolbarControls()}</div>
+              </div>
+              <div class="stage">${activeVisualization()}</div>
+              ${timelineBar()}
+            </section>
+          </div>
+          ${statusBar()}
+        </div>`;
+      }
+
+      // ----------------------------------------------------------------
+      // Colour transform. `forwardScale` maps a linear data fraction to its
+      // position on the ramp, so canvas and colorbar cannot disagree.
+      // ----------------------------------------------------------------
+      function forwardScale(frac) {
+        const t = clamp(frac, 0, 1);
+        if (state.scale === "symlog") {
+          const signed = t * 2 - 1;
+          return 0.5 + 0.5 * Math.sign(signed) * (Math.log1p(7 * Math.abs(signed)) / Math.log(8));
+        }
+        if (state.scale === "log") return Math.log1p(20 * t) / Math.log(21);
+        return t;
+      }
+
+      function plotTypeScale(frame) {
+        const figure = frame.closest(".figure");
+        return clamp(Math.min(figure.clientWidth / 1180, figure.clientHeight / 720), 0.85, 1.18);
+      }
+
+      // ----------------------------------------------------------------
+      // Field plot. Furniture is drawn in device pixels over the canvas, so
+      // hairlines and type keep their real weight at any window size.
+      // ----------------------------------------------------------------
+      const FIELD_MARGIN = { left: 56, right: 92, top: 12, bottom: 46 };
+
+      function layoutField(frame) {
+        const svg = frame.querySelector("[data-plot-svg]");
+        const canvas = frame.querySelector("[data-field-canvas]");
+        const tiles = frame.querySelector("[data-map-tiles]");
+        const attribution = frame.querySelector("[data-attribution]");
+        const readout = frame.querySelector("[data-probe]");
+        const W = frame.clientWidth;
+        const H = frame.clientHeight;
+        if (!svg || !canvas || W < 60 || H < 60) return;
+
+        const m = FIELD_MARGIN;
+        const availW = Math.max(20, W - m.left - m.right);
+        const availH = Math.max(20, H - m.top - m.bottom);
+        const aspect = fieldAspect();
+        let plotW = availW;
+        let plotH = plotW / aspect;
+        if (plotH > availH) {
+          plotH = availH;
+          plotW = plotH * aspect;
+        }
+        const x0 = m.left + (availW - plotW) / 2;
+        const y0 = m.top + (availH - plotH) / 2;
+        const x1 = x0 + plotW;
+        const y1 = y0 + plotH;
+
+        const place = (node, left, top, width, height) => {
+          if (!node) return;
+          node.style.left = `${left}px`;
+          node.style.top = `${top}px`;
+          if (width !== undefined) {
+            node.style.width = `${width}px`;
+            node.style.height = `${height}px`;
+          }
+        };
+        place(canvas, x0, y0, plotW, plotH);
+        place(tiles, x0, y0, plotW, plotH);
+        place(attribution, x0 + 4, y1 - 15);
+        place(readout, x0 + 4, y0 + 4);
+
+        drawFieldRaster(canvas, plotW, plotH);
+
+        const v = currentVariable();
+        const domain = colorDomain(v);
+
+        const lonTicks = niceTicks(FIELD_BOUNDS.west, FIELD_BOUNDS.east, Math.max(2, Math.round(plotW / 90)));
+        const latTicks = niceTicks(FIELD_BOUNDS.south, FIELD_BOUNDS.north, Math.max(2, Math.round(plotH / 60)));
+        const lonStep = tickStep(lonTicks);
+        const latStep = tickStep(latTicks);
+
+        const parts = [];
+        lonTicks.forEach((lon) => {
+          const x = x0 + lonToFrac(lon) * plotW;
+          if (x < x0 - 0.5 || x > x1 + 0.5) return;
+          parts.push(`<line class="tick" x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${y1.toFixed(1)}" y2="${(y1 + 3.5).toFixed(1)}" />`);
+          parts.push(`<text class="ticklabel" x="${x.toFixed(1)}" y="${(y1 + 15).toFixed(1)}" text-anchor="middle">${formatTick(lon, lonStep)}</text>`);
+        });
+        latTicks.forEach((lat) => {
+          const y = y0 + latToFrac(lat) * plotH;
+          if (y < y0 - 0.5 || y > y1 + 0.5) return;
+          parts.push(`<line class="tick" x1="${(x0 - 3.5).toFixed(1)}" x2="${x0.toFixed(1)}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" />`);
+          parts.push(`<text class="ticklabel" x="${(x0 - 6).toFixed(1)}" y="${(y + 3.6).toFixed(1)}" text-anchor="end">${formatTick(lat, latStep)}</text>`);
+        });
+
+        // A map panel is boxed; a time series is not. Both follow Style/.
+        parts.push(`<rect class="spine" x="${x0.toFixed(1)}" y="${y0.toFixed(1)}" width="${plotW.toFixed(1)}" height="${plotH.toFixed(1)}" />`);
+        parts.push(axisLabelSvg((x0 + x1) / 2, y1 + 34, "Longitude (°E)"));
+        parts.push(rotatedLabelSvg(x0 - 40, (y0 + y1) / 2, "Latitude (°N)"));
+        parts.push(colorbarSvg(x1 + 16, y0, plotH, domain, resolvedCmap(v), v));
+        parts.push(`<g data-probe-mark></g>`);
+
+        setSvg(svg, W, H, parts.join(""));
+        svg._field = { x0, y0, plotW, plotH };
+        updateProbeMark();
+      }
+
+      function axisLabelSvg(x, y, text) {
+        return `<text class="axislabel" x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle">${text}</text>`;
+      }
+
+      function rotatedLabelSvg(x, y, text) {
+        return `<text class="axislabel" x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" transform="rotate(-90 ${x.toFixed(1)} ${y.toFixed(1)})">${text}</text>`;
+      }
+
+      /** Colorbar in its own column, with real ticks on nice numbers. */
+      function colorbarSvg(x, y, height, domain, cmap, v) {
+        const width = 13;
+        const ticks = niceTicks(domain[0], domain[1], Math.max(2, Math.round(height / 46)));
+        const step = tickStep(ticks);
+        const stops = (PALETTES[cmap] || PALETTES.cividis)
+          .map((hex, i, all) => `<stop offset="${((i / (all.length - 1)) * 100).toFixed(2)}%" stop-color="${hex}" />`)
+          .join("");
+        const marks = ticks.map((value) => {
+          const ty = y + (1 - forwardScale((value - domain[0]) / (domain[1] - domain[0]))) * height;
+          if (ty < y - 0.5 || ty > y + height + 0.5) return "";
+          return `<line class="tick" x1="${x + width}" x2="${x + width + 3.5}" y1="${ty.toFixed(1)}" y2="${ty.toFixed(1)}" />
+            <text class="ticklabel" x="${x + width + 6}" y="${(ty + 3.6).toFixed(1)}">${formatTick(value, step)}</text>`;
+        }).join("");
+        return `<defs><linearGradient id="cb-ramp" x1="0" y1="1" x2="0" y2="0">${stops}</linearGradient></defs>
+          <rect x="${x}" y="${y.toFixed(1)}" width="${width}" height="${height.toFixed(1)}" fill="url(#cb-ramp)" />
+          <rect class="cb-frame" x="${x}" y="${y.toFixed(1)}" width="${width}" height="${height.toFixed(1)}" />
+          ${marks}
+          ${rotatedLabelSvg(x + width + 54, y + height / 2, `${esc(v.axisTitle)} (${unitSvg(v.unit)})`)}`;
+      }
+
+      /** The probe cross lives in its own group, so hovering never re-rasterises. */
+      function updateProbeMark() {
+        document.querySelectorAll("[data-plot-svg]").forEach((svg) => {
+          const field = svg._field;
+          const group = svg.querySelector("[data-probe-mark]");
+          if (!field || !group) return;
+          if (!state.probe) {
+            group.innerHTML = "";
+            return;
+          }
+          const x = field.x0 + state.probe.fx * field.plotW;
+          const y = field.y0 + state.probe.fy * field.plotH;
+          group.innerHTML = `<g class="hover-crosshair" opacity="0.8">
+            <line x1="${(x - 7).toFixed(1)}" x2="${(x + 7).toFixed(1)}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" />
+            <line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${(y - 7).toFixed(1)}" y2="${(y + 7).toFixed(1)}" />
+          </g>`;
+        });
+      }
+
+      let rasterCanvas = null;
+
+      function drawFieldRaster(canvas, cssW, cssH) {
+        const dpr = clamp(devicePixelRatio || 1, 1, 2);
+        const domain = colorDomain();
+        // Sample about every 2 CSS pixels, then upscale without smoothing --
+        // rc sets image.interpolation to nearest for the same reason.
+        const sampleW = clamp(Math.round(cssW / 2), 24, 640);
+        const sampleH = clamp(Math.round(cssH / 2), 24, 640);
+        canvas.width = Math.max(1, Math.round(cssW * dpr));
+        canvas.height = Math.max(1, Math.round(cssH * dpr));
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+
+        if (!rasterCanvas) rasterCanvas = document.createElement("canvas");
+        rasterCanvas.width = sampleW;
+        rasterCanvas.height = sampleH;
+        const rasterCtx = rasterCanvas.getContext("2d");
+        const image = rasterCtx.createImageData(sampleW, sampleH);
+        const data = image.data;
+        const table = lut(resolvedCmap());
+        const span = domain[1] - domain[0];
+
+        for (let py = 0; py < sampleH; py += 1) {
+          const y = 1 - ((py + 0.5) / sampleH) * 2;
+          for (let px = 0; px < sampleW; px += 1) {
+            const x = ((px + 0.5) / sampleW) * 2 - 1;
+            const index = clamp(Math.round(forwardScale((fieldValue(x, y, domain) - domain[0]) / span) * 255), 0, 255);
+            const o = (py * sampleW + px) * 4;
+            data[o] = table[index * 3];
+            data[o + 1] = table[index * 3 + 1];
+            data[o + 2] = table[index * 3 + 2];
+            data[o + 3] = 255;
+          }
+        }
+        rasterCtx.putImageData(image, 0, 0);
+
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.imageSmoothingEnabled = false;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(rasterCanvas, 0, 0, canvas.width, canvas.height);
+      }
+
+      // ----------------------------------------------------------------
+      // Curve plot
+      // ----------------------------------------------------------------
+      const CURVE_MARGIN = { left: 60, right: 20, top: 42, bottom: 62 };
+
+      function curveGeometry(frame) {
+        const W = frame.clientWidth;
+        const H = frame.clientHeight;
+        const typeScale = plotTypeScale(frame);
+        const x0 = CURVE_MARGIN.left;
+        const x1 = Math.max(x0 + 40, W - CURVE_MARGIN.right);
+        const y0 = CURVE_MARGIN.top;
+        const y1 = Math.max(y0 + 40, H - CURVE_MARGIN.bottom);
+        const [lo, hi] = curveDomain();
+        return {
+          W, H, x0, x1, y0, y1, lo, hi, typeScale,
+          xScale: (index) => x0 + (index / (TIME_LENGTH - 1)) * (x1 - x0),
+          yScale: (value) => y1 - ((value - lo) / (hi - lo)) * (y1 - y0),
+          indexAt: (x) => clamp(Math.round(((x - x0) / (x1 - x0)) * (TIME_LENGTH - 1)), 0, TIME_LENGTH - 1),
+        };
+      }
+
+      function layoutCurve(frame) {
+        const svg = frame.querySelector("[data-plot-svg]");
+        if (!svg || frame.clientWidth < 60 || frame.clientHeight < 60) return;
+        const g = curveGeometry(frame);
+        const v = currentVariable();
+        const names = curveSeriesNames(v);
+
+        const tide = [];
+        const total = [];
+        for (let i = 0; i < TIME_LENGTH; i += 1) {
+          const value = curveValue(i, v);
+          tide.push([g.xScale(i), g.yScale(value.tide)]);
+          total.push([g.xScale(i), g.yScale(value.total)]);
+        }
+        const linePath = (points) => points.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+        const areaPath = `${linePath(total)} ${[...tide].reverse().map(([x, y]) => `L${x.toFixed(1)},${y.toFixed(1)}`).join(" ")} Z`;
+
+        const parts = [];
+
+        // Gridlines: y only, faint, below the data.
+        const yTicks = niceTicks(g.lo, g.hi, Math.max(2, Math.round((g.y1 - g.y0) / 52)));
+        const yStep = tickStep(yTicks);
+        yTicks.forEach((value) => {
+          const y = g.yScale(value);
+          if (y < g.y0 - 0.5 || y > g.y1 + 0.5) return;
+          parts.push(`<line class="gridline" x1="${g.x0}" x2="${g.x1.toFixed(1)}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" />`);
+          parts.push(`<line class="tick" x1="${g.x0 - 3.5}" x2="${g.x0}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" />`);
+          parts.push(`<text class="ticklabel" x="${g.x0 - 6}" y="${(y + 3.6).toFixed(1)}" text-anchor="end">${formatTick(value, yStep)}</text>`);
+        });
+
+        parts.push(timeAxisSvg(g, v));
+
+        // Spines: left and bottom only.
+        parts.push(`<line class="spine" x1="${g.x0}" x2="${g.x0}" y1="${g.y0}" y2="${g.y1.toFixed(1)}" />`);
+        parts.push(`<line class="spine" x1="${g.x0}" x2="${g.x1.toFixed(1)}" y1="${g.y1.toFixed(1)}" y2="${g.y1.toFixed(1)}" />`);
+        parts.push(rotatedLabelSvg(g.x0 - 44, (g.y0 + g.y1) / 2, `${esc(v.axisTitle)} (${unitSvg(v.unit)})`));
+
+        // Datum, where zero is a real reference.
+        if (g.lo < 0 && g.hi > 0) {
+          const yZero = g.yScale(0).toFixed(1);
+          parts.push(`<line class="datum" x1="${g.x0}" x2="${g.x1.toFixed(1)}" y1="${yZero}" y2="${yZero}" />`);
+        }
+
+        parts.push(`<path d="${areaPath}" fill="${SEMANTIC.surge}" fill-opacity="0.2" stroke="none" />`);
+        parts.push(`<path class="series-model" d="${linePath(tide)}" stroke="${SEMANTIC.tide}" />`);
+        parts.push(`<path class="series-primary" d="${linePath(total)}" stroke="${SEMANTIC.total}" />`);
+
+        // Legend in the headroom made for it, no frame.
+        parts.push(legendSvg(g.x0, g.y0 - 14 * g.typeScale, g.x1 - g.x0, g.typeScale, names));
+
+        const cursorX = g.xScale(playbackPosition).toFixed(2);
+        const sampleX = g.xScale(state.time).toFixed(1);
+        const sample = curveValue(state.time, v);
+        parts.push(`<g data-time-layer>
+          <line class="cursor-line" data-time-cursor x1="${cursorX}" x2="${cursorX}" y1="${g.y0}" y2="${g.y1.toFixed(1)}" />
+          <circle class="sample-dot" data-time-sample="total" cx="${sampleX}" cy="${g.yScale(sample.total).toFixed(1)}" r="5.2" fill="${SEMANTIC.total}" />
+          <circle class="sample-dot" data-time-sample="tide" cx="${sampleX}" cy="${g.yScale(sample.tide).toFixed(1)}" r="4.6" fill="${SEMANTIC.tide}" />
+        </g>`);
+        parts.push(`<g data-crosshair></g>`);
+
+        setSvg(svg, g.W, g.H, parts.join(""));
+        svg._geometry = g;
+        if (state.hover !== null) drawCurveHover(svg, state.hover, state.hoverX);
+      }
+
+      function legendSvg(x, y, width, scale, names) {
+        const entries = [
+          { kind: "line", cls: "series-primary", color: SEMANTIC.total, text: names.primary },
+          { kind: "line", cls: "series-model", color: SEMANTIC.tide, text: names.model },
+          { kind: "patch", color: SEMANTIC.surge, text: names.residual },
+        ];
+        const rowGap = 16 * scale;
+        let cursor = x;
+        let row = 0;
+        const placed = entries.map((entry) => {
+          const entryWidth = (45 + entry.text.length * 6.4) * scale;
+          if (cursor > x && cursor + entryWidth > x + width) {
+            cursor = x;
+            row += 1;
+          }
+          const placedEntry = { ...entry, x: cursor, row };
+          cursor += entryWidth;
+          return placedEntry;
+        });
+        const firstY = y - row * rowGap;
+        return placed.map((entry) => {
+          const entryY = firstY + entry.row * rowGap;
+          const markWidth = 22 * scale;
+          const mark = entry.kind === "line"
+            ? `<line class="${entry.cls}" x1="${entry.x}" x2="${entry.x + markWidth}" y1="${entryY}" y2="${entryY}" stroke="${entry.color}" />`
+            : `<rect x="${entry.x}" y="${entryY - 5 * scale}" width="${markWidth}" height="${10 * scale}" fill="${entry.color}" fill-opacity="0.2" />`;
+          const label = `<text class="legend-label" x="${entry.x + 27 * scale}" y="${entryY + 4 * scale}">${esc(entry.text)}</text>`;
+          return mark + label;
+        }).join("");
+      }
+
+      /** Two-tier time axis: hours, days at midnight, month when it changes. */
+      function timeAxisSvg(g, v) {
+        const parts = [];
+        const width = g.x1 - g.x0;
+        const baseline = g.y1;
+
+        if (!v.time) {
+          const ticks = niceTicks(0, TIME_LENGTH - 1, Math.max(2, Math.round(width / 80)));
+          const step = tickStep(ticks);
+          ticks.forEach((i) => {
+            const x = g.xScale(i).toFixed(1);
+            parts.push(`<line class="tick" x1="${x}" x2="${x}" y1="${baseline.toFixed(1)}" y2="${(baseline + 3.5).toFixed(1)}" />`);
+            parts.push(`<text class="ticklabel" x="${x}" y="${(baseline + 15).toFixed(1)}" text-anchor="middle">${formatTick(i, step)}</text>`);
+          });
+          parts.push(axisLabelSvg((g.x0 + g.x1) / 2, baseline + 34, "Time index"));
+          return parts.join("");
+        }
+
+        // Pick an hour step that leaves at least 34 px between labels.
+        const pxPerHour = width / (TIME_LENGTH - 1);
+        const hourStep = [1, 3, 6, 12, 24].find((h) => h * pxPerHour >= 34) || 24;
+        const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+        let previousMonth = -1;
+
+        for (let i = 0; i < TIME_LENGTH; i += 1) {
+          const p = timeParts(i, v);
+          if (!p || p.minute !== 0) continue;
+          const midnight = p.hour === 0;
+          if (!midnight && (hourStep >= 24 || p.hour % hourStep !== 0)) continue;
+          const x = g.xScale(i).toFixed(1);
+          parts.push(`<line class="${midnight ? "tick" : "tick-minor"}" x1="${x}" x2="${x}" y1="${baseline.toFixed(1)}" y2="${(baseline + (midnight ? 5 : 3)).toFixed(1)}" />`);
+          if (midnight) {
+            parts.push(`<text class="ticklabel" x="${x}" y="${(baseline + 17).toFixed(1)}" text-anchor="middle" font-weight="700">${pad2(p.day)}</text>`);
+            if (p.month !== previousMonth) {
+              parts.push(`<text class="ticklabel" x="${x}" y="${(baseline + 30).toFixed(1)}" text-anchor="middle" font-weight="700" letter-spacing="0.08em">${months[p.month]}</text>`);
+              previousMonth = p.month;
+            }
+          } else {
+            parts.push(`<text class="ticklabel-minor" x="${x}" y="${(baseline + 15).toFixed(1)}" text-anchor="middle">${pad2(p.hour)}</text>`);
+          }
+        }
+        parts.push(axisLabelSvg((g.x0 + g.x1) / 2, baseline + 48, `Time (${esc(v.time.zone)})`));
+        return parts.join("");
+      }
+
+      function drawCurveHover(svg, index, lineX) {
+        const g = svg._geometry;
+        const group = svg.querySelector("[data-crosshair]");
+        if (!g || !group) return;
+        const v = currentVariable();
+        const values = curveValue(index, v);
+        const names = curveSeriesNames(v);
+        const unit = unitText(v.unit);
+        const rowsData = [
+          [names.primary, values.total, SEMANTIC.total, "series-primary"],
+          [names.model, values.tide, SEMANTIC.tide, "series-model"],
+          [names.residual, values.total - values.tide, SEMANTIC.surge, "patch"],
+        ];
+
+        const scale = g.typeScale;
+        const stamp = timestampLabel(index, v) || `timestep ${index}`;
+        const labelChars = Math.max(stamp.length, ...rowsData.map(([name]) => name.length + 10));
+        const boxW = (32 + labelChars * 7.15) * scale;
+        const boxH = (32 + rowsData.length * 19) * scale;
+        const x = g.xScale(index);
+        const trackerX = Number.isFinite(lineX) ? clamp(lineX, g.x0, g.x1) : x;
+        const gap = 14 * scale;
+        const preferredX = x + gap + boxW > g.W - 2 ? x - gap - boxW : x + gap;
+        const boxX = clamp(preferredX, 2, Math.max(2, g.W - boxW - 2));
+        const boxY = clamp(g.yScale(values.total) - boxH / 2, g.y0 + 2, Math.max(g.y0 + 2, g.y1 - boxH - 2));
+
+        const rows = rowsData.map(([name, value, color, cls], i) => {
+          const ry = (45 + i * 19) * scale;
+          const swatch = cls === "patch"
+            ? `<rect x="${12 * scale}" y="${ry - 10 * scale}" width="${16 * scale}" height="${9 * scale}" fill="${color}" fill-opacity="0.25" />`
+            : `<line class="${cls}" x1="${12 * scale}" x2="${28 * scale}" y1="${ry - 5 * scale}" y2="${ry - 5 * scale}" stroke="${color}" />`;
+          return `${swatch}<text class="tooltip-text" x="${34 * scale}" y="${ry}">${esc(name)}</text>
+            <text class="tooltip-text" x="${boxW - 12 * scale}" y="${ry}" text-anchor="end">${value.toFixed(2)} ${esc(unit)}</text>`;
+        }).join("");
+
+        const timeLayer = svg.querySelector("[data-time-layer]");
+        if (timeLayer) timeLayer.setAttribute("visibility", "hidden");
+        group.innerHTML = `<line class="hover-crosshair" x1="${trackerX.toFixed(1)}" x2="${trackerX.toFixed(1)}" y1="${g.y0}" y2="${g.y1.toFixed(1)}" />
+          <circle class="hover-dot" cx="${x.toFixed(1)}" cy="${g.yScale(values.total).toFixed(1)}" r="5.2" fill="${SEMANTIC.total}" />
+          <circle class="hover-dot" cx="${x.toFixed(1)}" cy="${g.yScale(values.tide).toFixed(1)}" r="4.6" fill="${SEMANTIC.tide}" />
+          <g transform="translate(${boxX.toFixed(1)} ${boxY.toFixed(1)})">
+            <rect class="tooltip-box" width="${boxW.toFixed(1)}" height="${boxH.toFixed(1)}" rx="${(2 * scale).toFixed(1)}" />
+            <text class="tooltip-text tooltip-heading" x="${12 * scale}" y="${20 * scale}">${esc(stamp)}</text>
+            ${rows}
+          </g>`;
+      }
+
+      function clearCurveHover(svg) {
+        const group = svg && svg.querySelector("[data-crosshair]");
+        if (group) group.innerHTML = "";
+        const timeLayer = svg && svg.querySelector("[data-time-layer]");
+        if (timeLayer) timeLayer.removeAttribute("visibility");
+      }
+
+      function setSvg(svg, width, height, markup) {
+        svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+        svg.setAttribute("width", width);
+        svg.setAttribute("height", height);
+        svg.innerHTML = markup;
+      }
+
+      function syncCurvePlayback() {
+        document.querySelectorAll('[data-plot-frame][data-kind="curve"] [data-plot-svg]').forEach((svg) => {
+          const g = svg._geometry;
+          if (!g) return;
+          const cursorX = g.xScale(clamp(playbackPosition, 0, TIME_LENGTH - 1)).toFixed(2);
+          const cursor = svg.querySelector("[data-time-cursor]");
+          if (cursor) {
+            cursor.setAttribute("x1", cursorX);
+            cursor.setAttribute("x2", cursorX);
+          }
+          const sampleX = g.xScale(state.time).toFixed(1);
+          const sample = curveValue(state.time);
+          [["total", sample.total], ["tide", sample.tide]].forEach(([name, value]) => {
+            const marker = svg.querySelector(`[data-time-sample="${name}"]`);
+            if (!marker) return;
+            marker.setAttribute("cx", sampleX);
+            marker.setAttribute("cy", g.yScale(value).toFixed(1));
+          });
+        });
+      }
+
+      // ----------------------------------------------------------------
+      // Draw scheduling. Every redraw is coalesced into one animation frame.
+      // ----------------------------------------------------------------
+      let drawPending = false;
+
+      function scheduleDraw() {
+        if (drawPending) return;
+        drawPending = true;
+        requestAnimationFrame(() => {
+          drawPending = false;
+          document.querySelectorAll("[data-plot-frame]").forEach((frame) => {
+            if (frame.dataset.kind === "field") layoutField(frame);
+            else layoutCurve(frame);
+          });
+        });
+      }
+
+      let frameObserver = null;
+      const observedFrameSizes = new WeakMap();
+
+      function observeFrames() {
+        if (typeof ResizeObserver === "undefined") return;
+        if (frameObserver) frameObserver.disconnect();
+        frameObserver = new ResizeObserver((entries) => {
+          const changed = entries.some(({ target, contentRect }) => {
+            const previous = observedFrameSizes.get(target);
+            const next = [contentRect.width, contentRect.height];
+            observedFrameSizes.set(target, next);
+            return !previous || Math.abs(previous[0] - next[0]) > 0.5 || Math.abs(previous[1] - next[1]) > 0.5;
+          });
+          if (changed) scheduleDraw();
+        });
+        document.querySelectorAll("[data-plot-frame]").forEach((frame) => {
+          const bounds = frame.getBoundingClientRect();
+          observedFrameSizes.set(frame, [bounds.width, bounds.height]);
+          frameObserver.observe(frame);
+        });
+      }
+
+      function render() {
+        document.querySelector("#app").innerHTML = renderShell();
+        bindInteractions();
+        observeFrames();
+        scheduleDraw();
+      }
+
+      /** Keep the dataset shell mounted; only the viewer changes. */
+      function renderViewer() {
+        const shell = document.querySelector(".shell");
+        if (!shell) return render();
+        shell.dataset.sidebar = state.sidebar ? "open" : "closed";
+        shell.style.setProperty("--sidebar-w", `${state.sidebarWidth}px`);
+        document.querySelectorAll("[data-mode]").forEach((button) => {
+          button.setAttribute("aria-pressed", button.dataset.mode === state.mode);
+        });
+        document.querySelectorAll("[data-variable-path]").forEach((button) => {
+          button.setAttribute("aria-selected", button.dataset.variablePath === state.variable);
+        });
+        const path = document.querySelector(".topbar .path");
+        const tabs = document.querySelector(".view-tabs");
+        const controls = document.querySelector(".control-group");
+        const stage = document.querySelector(".stage");
+        const timeline = document.querySelector(".timeline-bar");
+        const status = document.querySelector(".statusbar");
+        if (path) path.outerHTML = topPath();
+        if (tabs) tabs.outerHTML = viewTabs();
+        if (controls) controls.innerHTML = toolbarControls();
+        if (stage) stage.innerHTML = activeVisualization();
+        if (timeline) timeline.outerHTML = timelineBar();
+        if (status) status.outerHTML = statusBar();
+        bindInteractions();
+        observeFrames();
+        scheduleDraw();
+      }
+
+      // ----------------------------------------------------------------
+      // Time
+      // ----------------------------------------------------------------
+      function syncTimeUi() {
+        document.querySelectorAll("[data-time]").forEach((input) => { input.value = state.time; });
+        document.querySelectorAll("[data-time-output]").forEach((output) => { output.innerHTML = timeOutput(); });
+        document.querySelectorAll("[data-figure-title]").forEach((title) => {
+          title.textContent = state.view === "curve" ? currentVariable().axisTitle : plotTitle();
+        });
+        document.querySelectorAll("[data-action=reverse]").forEach((b) => b.setAttribute("aria-pressed", state.playDirection === -1));
+        document.querySelectorAll("[data-action=stop]").forEach((b) => b.setAttribute("aria-pressed", state.playDirection === 0));
+        document.querySelectorAll("[data-action=forward]").forEach((b) => b.setAttribute("aria-pressed", state.playDirection === 1));
+      }
+
+      function setTime(value) {
+        state.time = ((Math.round(value) % TIME_LENGTH) + TIME_LENGTH) % TIME_LENGTH;
+        playbackPosition = state.time;
+        syncTimeUi();
+        scheduleDraw();
+      }
+
+      // Playback rides on rAF, so a slow frame drops a step instead of
+      // queueing work the browser can never catch up on.
+      let playbackHandle = 0;
+      let playbackLast = 0;
+      let playbackPosition = state.time;
+      const PLAYBACK_INTERVAL_MS = 110;
+
+      function stopPlayback() {
+        cancelAnimationFrame(playbackHandle);
+        playbackHandle = 0;
+        state.playDirection = 0;
+        playbackPosition = state.time;
+        syncTimeUi();
+        syncCurvePlayback();
+      }
+
+      function startPlayback(direction) {
+        cancelAnimationFrame(playbackHandle);
+        state.playDirection = direction;
+        playbackPosition = state.time;
+        playbackLast = 0;
+        const tick = (now) => {
+          if (state.playDirection === 0) return;
+          if (!playbackLast) {
+            playbackLast = now;
+          } else {
+            const elapsed = Math.min(now - playbackLast, PLAYBACK_INTERVAL_MS * 2);
+            playbackLast = now;
+            playbackPosition = ((playbackPosition + direction * elapsed / PLAYBACK_INTERVAL_MS) % TIME_LENGTH + TIME_LENGTH) % TIME_LENGTH;
+            const sample = Math.round(playbackPosition) % TIME_LENGTH;
+            if (sample !== state.time) {
+              state.time = sample;
+              syncTimeUi();
+              if (document.querySelector('[data-plot-frame][data-kind="field"]')) scheduleDraw();
+            }
+            syncCurvePlayback();
+          }
+          playbackHandle = requestAnimationFrame(tick);
+        };
+        playbackHandle = requestAnimationFrame(tick);
+        syncTimeUi();
+      }
+
+      // ----------------------------------------------------------------
+      // Probe
+      // ----------------------------------------------------------------
+      function setProbe(rawFx, rawFy) {
+        const fx = clamp(rawFx, 0, 1);
+        const fy = clamp(rawFy, 0, 1);
+        state.probe = {
+          fx,
+          fy,
+          lon: fracToLon(fx),
+          lat: fracToLat(fy),
+          value: fieldValue(fx * 2 - 1, 1 - fy * 2, colorDomain()),
+        };
+        const unit = unitText(currentVariable().unit);
+        const text = `${state.probe.lon.toFixed(2)}°E · ${state.probe.lat.toFixed(2)}°N · ${state.probe.value.toFixed(2)} ${unit}`;
+        document.querySelectorAll("[data-probe]").forEach((output) => {
+          output.textContent = text;
+          output.hidden = false;
+        });
+        document.querySelectorAll("[data-status-probe]").forEach((n) => { n.textContent = probeText(); });
+        document.querySelectorAll("[data-status-index]").forEach((n) => { n.textContent = probeIndexText(); });
+        updateProbeMark();
+      }
+
+      function setMessage(text) {
+        state.message = text;
+        document.querySelectorAll("[data-status-message]").forEach((n) => { n.textContent = text; });
+      }
+
+      // ----------------------------------------------------------------
+      // Interactions
+      // ----------------------------------------------------------------
+      function bindOnce(selector, bind) {
+        document.querySelectorAll(`${selector}:not([data-bound])`).forEach((node) => {
+          node.dataset.bound = "";
+          bind(node);
+        });
+      }
+
+      function bindInteractions() {
+        bindOnce("[data-mode]", (button) => {
+          button.addEventListener("click", () => {
+            state.mode = button.dataset.mode;
+            renderViewer();
+          });
+        });
+
+        bindOnce("[data-view]", (button) => {
+          button.addEventListener("click", () => {
+            if (button.disabled) return;
+            state.mode = "display";
+            state.view = button.dataset.view;
+            state.hover = null;
+            state.hoverX = null;
+            renderViewer();
+          });
+        });
+
+        bindOnce("[data-variable-path]", (button) => {
+          button.addEventListener("click", () => {
+            stopPlayback();
+            state.variable = button.dataset.variablePath;
+            state.hover = null;
+            state.hoverX = null;
+            if (!hasTime()) {
+              state.view = "field";
+              state.time = 0;
+            }
+            if (state.scale === "log" && colorDomain()[0] <= 0) state.scale = "linear";
+            if (state.probe) setProbe(state.probe.fx, state.probe.fy);
+            state.message = "mock selection changed · no network request";
+            renderViewer();
+          });
+        });
+
+        bindOnce("[data-time]", (input) => {
+          input.addEventListener("input", () => {
+            stopPlayback();
+            setTime(Number(input.value));
+          });
+        });
+
+        bindOnce("[data-level]", (input) => {
+          input.addEventListener("input", () => {
+            state.level = Number(input.value);
+            document.querySelectorAll("[data-level-output]").forEach((o) => { o.textContent = state.level; });
+            scheduleDraw();
+          });
+        });
+
+        bindOnce("[data-map]", (select) => {
+          select.addEventListener("change", () => {
+            state.map = select.value;
+            state.message = state.map === "none" ? "map overlay off" : "OSM-derived CARTO Positron overlay";
+            renderViewer();
+          });
+        });
+
+        bindOnce("[data-cmap]", (select) => {
+          select.addEventListener("change", () => {
+            state.cmap = select.value || null;
+            state.message = state.cmap === "balance" && !currentVariable().zeroMeaningful
+              ? "balance is diverging: only use it where zero is a real reference"
+              : `colormap ${resolvedCmap()}`;
+            setMessage(state.message);
+            if (state.probe) setProbe(state.probe.fx, state.probe.fy);
+            scheduleDraw();
+          });
+        });
+
+        bindOnce("[data-scale]", (select) => {
+          select.addEventListener("change", () => {
+            state.scale = select.value;
+            state.message = `${state.scale} colour transform · browser-side only`;
+            const subtitle = document.querySelector('[data-plot-frame][data-kind="field"]')?.closest(".figure")?.querySelector(".figure-subtitle");
+            if (subtitle) subtitle.innerHTML = fieldSubtitle();
+            setMessage(state.message);
+            scheduleDraw();
+          });
+        });
+
+        bindOnce("[data-action]", (button) => {
+          button.addEventListener("click", () => {
+            const action = button.dataset.action;
+            if (action === "first") { stopPlayback(); setTime(0); return; }
+            if (action === "last") { stopPlayback(); setTime(TIME_LENGTH - 1); return; }
+            if (action === "reverse") { startPlayback(-1); return; }
+            if (action === "step-back") { stopPlayback(); setTime(state.time - 1); return; }
+            if (action === "stop") { stopPlayback(); return; }
+            if (action === "step-forward") { stopPlayback(); setTime(state.time + 1); return; }
+            if (action === "forward") { startPlayback(1); return; }
+
+            if (action === "sidebar") {
+              state.sidebar = !state.sidebar;
+              const shell = document.querySelector(".shell");
+              if (shell) shell.dataset.sidebar = state.sidebar ? "open" : "closed";
+              button.setAttribute("aria-expanded", state.sidebar);
+              return;
+            } else if (action === "reset") {
+              stopPlayback();
+              state.time = 99;
+              state.level = 4;
+              state.cmap = null;
+              state.scale = "linear";
+              state.hover = null;
+              state.hoverX = null;
+              state.message = "view reset";
+            } else if (action === "png") {
+              setMessage("PNG capture would download here");
+              return;
+            } else if (action === "fullscreen") {
+              setMessage("fullscreen control placement confirmed");
+              return;
+            }
+            playbackPosition = state.time;
+            renderViewer();
+          });
+        });
+
+        bindOnce("[data-tree-filter]", (input) => {
+          input.addEventListener("input", () => {
+            const needle = input.value.trim().toLowerCase();
+            let visible = 0;
+            document.querySelectorAll("[data-search]").forEach((item) => {
+              const match = needle === "" || item.dataset.search.includes(needle);
+              item.hidden = !match;
+              if (match) visible += 1;
+            });
+            document.querySelectorAll("[data-group]").forEach((group) => {
+              const items = [...document.querySelectorAll(`[data-variable-path^="/${group.dataset.group}/"]`)];
+              group.hidden = needle !== "" && (items.length === 0 || items.every((i) => i.hidden));
+            });
+            const empty = document.querySelector("[data-tree-empty]");
+            if (empty) empty.hidden = visible > 0;
+          });
+        });
+
+        bindSidebarGrip();
+        bindFieldProbe();
+        bindCurvePointer();
+      }
+
+      function bindSidebarGrip() {
+        bindOnce("[data-sidebar-grip]", (grip) => {
+          const shell = grip.closest(".shell");
+          const setWidth = (width) => {
+            state.sidebarWidth = clamp(width, 170, 460);
+            shell.style.setProperty("--sidebar-w", `${state.sidebarWidth}px`);
+          };
+          grip.addEventListener("pointerdown", (event) => {
+            event.preventDefault();
+            grip.setPointerCapture(event.pointerId);
+            const startX = event.clientX;
+            const startWidth = state.sidebarWidth;
+            const move = (moveEvent) => setWidth(startWidth + moveEvent.clientX - startX);
+            const up = () => {
+              grip.removeEventListener("pointermove", move);
+              grip.removeEventListener("pointerup", up);
+              grip.removeEventListener("pointercancel", up);
+            };
+            grip.addEventListener("pointermove", move);
+            grip.addEventListener("pointerup", up);
+            grip.addEventListener("pointercancel", up);
+          });
+          grip.addEventListener("keydown", (event) => {
+            const delta = event.key === "ArrowLeft" ? -16 : event.key === "ArrowRight" ? 16 : 0;
+            if (!delta) return;
+            event.preventDefault();
+            setWidth(state.sidebarWidth + delta);
+          });
+        });
+      }
+
+      function bindFieldProbe() {
+        bindOnce("[data-field-canvas]", (canvas) => {
+          const probeFrom = (event) => {
+            const bounds = canvas.getBoundingClientRect();
+            if (bounds.width < 2 || bounds.height < 2) return;
+            setProbe((event.clientX - bounds.left) / bounds.width, (event.clientY - bounds.top) / bounds.height);
+          };
+          canvas.addEventListener("pointermove", probeFrom);
+          canvas.addEventListener("click", probeFrom);
+        });
+      }
+
+      /**
+       * Bound on the frame, not on the SVG: the SVG is rebuilt on every draw,
+       * so a handler attached to its children would not survive a resize.
+       */
+      function bindCurvePointer() {
+        bindOnce('[data-plot-frame][data-kind="curve"]', (frame) => {
+          const svg = frame.querySelector("[data-plot-svg]");
+          const pointFrom = (event) => {
+            const g = svg._geometry;
+            if (!g) return null;
+            const bounds = frame.getBoundingClientRect();
+            const x = event.clientX - bounds.left;
+            const y = event.clientY - bounds.top;
+            if (x < g.x0 - 6 || x > g.x1 + 6 || y < g.y0 - 6 || y > g.y1 + 6) return null;
+            return { index: g.indexAt(x), x: clamp(x, g.x0, g.x1) };
+          };
+          frame.addEventListener("pointermove", (event) => {
+            const point = pointFrom(event);
+            state.hover = point && point.index;
+            state.hoverX = point && point.x;
+            if (!point) clearCurveHover(svg);
+            else drawCurveHover(svg, point.index, point.x);
+          });
+          frame.addEventListener("pointerleave", () => {
+            state.hover = null;
+            state.hoverX = null;
+            clearCurveHover(svg);
+          });
+          frame.addEventListener("click", (event) => {
+            const point = pointFrom(event);
+            if (!point) return;
+            stopPlayback();
+            setTime(point.index);
+          });
+        });
+      }
+
+      // ----------------------------------------------------------------
+      // Global
+      // ----------------------------------------------------------------
+      addEventListener("keydown", (event) => {
+        const target = event.target;
+        const tag = target instanceof HTMLElement ? target.tagName : "";
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (target && target.isContentEditable)) return;
+        if (!hasTime()) return;
+        const jump = event.shiftKey ? 12 : 1;
+        if (event.key === "ArrowLeft") { stopPlayback(); setTime(state.time - jump); }
+        else if (event.key === "ArrowRight") { stopPlayback(); setTime(state.time + jump); }
+        else if (event.key === "Home") { stopPlayback(); setTime(0); }
+        else if (event.key === "End") { stopPlayback(); setTime(TIME_LENGTH - 1); }
+        else if (event.key === " ") { if (state.playDirection === 0) startPlayback(1); else stopPlayback(); }
+        else return;
+        event.preventDefault();
+      });
+
+      if (typeof ResizeObserver === "undefined") addEventListener("resize", scheduleDraw);
+      addEventListener("pagehide", stopPlayback);
+      // A hidden tab still runs rAF in some browsers; stop burning frames.
+      document.addEventListener("visibilitychange", () => { if (document.hidden) stopPlayback(); });
+
+      console.assert(
+        timestampLabel(0, VARIABLES["/ocean/temperature"]) === "2024-07-25 00:00 HKT" &&
+          Math.abs(niceStep(0.31) - 0.5) < 1e-12 &&
+          formatTick(-0.0, 0.5) === "0.0" &&
+          colorDomain(VARIABLES["/wind/u10"])[0] === -colorDomain(VARIABLES["/wind/u10"])[1] &&
+          resolvedCmap(VARIABLES["/bathymetry/depth"]) === "depth" &&
+          colorDomain(VARIABLES["/bathymetry/depth"])[0] === 0 &&
+          Math.abs(fieldAspect() - 1.605) < 0.01 &&
+          mapTileMarkup().includes("/light_all/7/"),
+        "time, tick, colour-domain, projection and map invariants must hold",
+      );
+
+      render();
+    </script>
+  </body>
+</html>

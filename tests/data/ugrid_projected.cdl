@@ -1,0 +1,62 @@
+netcdf ugrid_projected {
+dimensions:
+  time = 2 ;
+  node = 6 ;
+  face = 3 ;
+  max_face_nodes = 4 ;
+variables:
+  float time(time) ;
+    time:standard_name = "time" ;
+    time:axis = "T" ;
+    time:units = "hours since 2025-09-21 12:00:00 UTC" ;
+  int Mesh2D ;
+    Mesh2D:cf_role = "mesh_topology" ;
+    Mesh2D:topology_dimension = 2 ;
+    Mesh2D:node_coordinates = "Mesh2D_node_x Mesh2D_node_y" ;
+    Mesh2D:face_node_connectivity = "Mesh2D_face_nodes" ;
+  float water_level(time, node) ;
+    water_level:long_name = "water surface elevation relative to mean sea level" ;
+    water_level:units = "m" ;
+    water_level:mesh = "Mesh2D" ;
+    water_level:location = "node" ;
+    water_level:coordinates = "Mesh2D_node_lon Mesh2D_node_lat" ;
+  double Mesh2D_node_x(node) ;
+    Mesh2D_node_x:standard_name = "projection_x_coordinate" ;
+    Mesh2D_node_x:units = "m" ;
+  double Mesh2D_node_y(node) ;
+    Mesh2D_node_y:standard_name = "projection_y_coordinate" ;
+    Mesh2D_node_y:units = "m" ;
+  double Mesh2D_node_lon(node) ;
+    Mesh2D_node_lon:standard_name = "longitude" ;
+    Mesh2D_node_lon:units = "degrees_east" ;
+  double Mesh2D_node_lat(node) ;
+    Mesh2D_node_lat:standard_name = "latitude" ;
+    Mesh2D_node_lat:units = "degrees_north" ;
+  int Mesh2D_face_nodes(face, max_face_nodes) ;
+    Mesh2D_face_nodes:cf_role = "face_node_connectivity" ;
+    Mesh2D_face_nodes:start_index = 1 ;
+    Mesh2D_face_nodes:_FillValue = -1 ;
+  float Mesh2D_node_depth(node) ;
+    Mesh2D_node_depth:mesh = "Mesh2D" ;
+    Mesh2D_node_depth:location = "node" ;
+    Mesh2D_node_depth:units = "m" ;
+  byte Mesh2D_face_mask(face) ;
+    Mesh2D_face_mask:mesh = "Mesh2D" ;
+    Mesh2D_face_mask:location = "face" ;
+
+data:
+  time = 0, 1 ;
+  water_level =
+    0.1, 0.2, 0.3, 0.4, 0.3, 0.2,
+    0.2, 0.3, 0.4, 0.5, 0.4, 0.3 ;
+  Mesh2D_node_x = 36580, 37580, 38580, 38580, 37580, 36580 ;
+  Mesh2D_node_y = -74592, -74592, -74592, -73592, -73592, -73592 ;
+  Mesh2D_node_lon = 114.08, 114.09, 114.10, 114.10, 114.09, 114.08 ;
+  Mesh2D_node_lat = 22.30, 22.30, 22.30, 22.31, 22.31, 22.31 ;
+  Mesh2D_face_nodes =
+    1, 2, 5, _,
+    2, 3, 4, 5,
+    1, 5, 6, _ ;
+  Mesh2D_node_depth = 5, 6, 7, 8, 7, 6 ;
+  Mesh2D_face_mask = 1, 1, 1 ;
+}

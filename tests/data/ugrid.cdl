@@ -1,0 +1,55 @@
+netcdf ugrid {
+dimensions:
+  time = 3 ;
+  node = 6 ;
+  face = 3 ;
+  max_face_nodes = 4 ;
+variables:
+  float time(time) ;
+    time:standard_name = "time" ;
+    time:axis = "T" ;
+    time:units = "hours since 2024-07-25 00:00:00 UTC" ;
+  int mesh ;
+    mesh:cf_role = "mesh_topology" ;
+    mesh:topology_dimension = 2 ;
+    mesh:node_coordinates = "node_x node_y" ;
+    mesh:face_node_connectivity = "face_nodes" ;
+  float node_x(node) ;
+    node_x:standard_name = "longitude" ;
+    node_x:units = "degrees_east" ;
+  float node_y(node) ;
+    node_y:standard_name = "latitude" ;
+    node_y:units = "degrees_north" ;
+  int face_nodes(face, max_face_nodes) ;
+    face_nodes:cf_role = "face_node_connectivity" ;
+    face_nodes:start_index = 1 ;
+    face_nodes:_FillValue = -1 ;
+  float node_temperature(time, node) ;
+    node_temperature:long_name = "UGRID node temperature" ;
+    node_temperature:units = "degree_Celsius" ;
+    node_temperature:mesh = "mesh" ;
+    node_temperature:location = "node" ;
+  float face_depth(time, face) ;
+    face_depth:long_name = "UGRID face depth" ;
+    face_depth:units = "m" ;
+    face_depth:mesh = "mesh" ;
+    face_depth:location = "face" ;
+
+data:
+  time = 0, 6, 12 ;
+  mesh = 0 ;
+  node_x = 110, 111, 112, 112, 111, 110 ;
+  node_y = 22, 22, 22, 23, 23, 23 ;
+  face_nodes =
+    1, 2, 5, _,
+    2, 3, 4, 5,
+    1, 5, 6, _ ;
+  node_temperature =
+    20, 21, 22, 23, 22, 21,
+    21, 22, 23, 24, 23, 22,
+    22, 23, 24, 25, 24, 23 ;
+  face_depth =
+    12, 35, 18,
+    13, 36, 19,
+    14, 37, 20 ;
+}
