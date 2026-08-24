@@ -1,20 +1,26 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 
 import { LatestSliceLoader, fetchCoordinate } from "./api";
-import { colorForValue, finiteRange, formatNumber, type ColorRange } from "./color";
+import {
+  colorForValue,
+  finiteRange,
+  formatNumber,
+  type ColormapChoice,
+  type ColorRange,
+} from "./color";
 import type {
-  Colormap,
   ColorScale,
   DataSlice,
   Metadata,
   Probe,
   Variable,
 } from "./model";
-import { attributeText, variableUnit } from "./model";
+import { displayUnit, quantityLabel } from "./model";
 import { formatPosition, probeAtPosition } from "./projection";
 import { fieldRequest, type DisplayDimensions } from "./selection";
 import { useElementSize } from "./useElementSize";
 import { MapOverlay } from "./MapOverlay";
+import { COLORBAR_WIDTH, Colorbar, PlotAxes, ViewControls } from "./plot";
 import {
   aspectRectangle,
   boxZoomBounds,
@@ -25,7 +31,7 @@ import {
   type ViewRectangle,
 } from "./view";
 
-const MARGIN = { top: 18, right: 30, bottom: 52, left: 68 };
+export const MARGIN = { top: 36, right: 14 + COLORBAR_WIDTH, bottom: 52, left: 68 };
 
 interface FieldViewProps {
   metadata: Metadata;
@@ -33,14 +39,18 @@ interface FieldViewProps {
   display: DisplayDimensions;
   indices: Record<string, number>;
   settled: boolean;
-  colormap: Colormap;
+  colormap: ColormapChoice;
   scale: ColorScale;
   range: ColorRange;
   rangeLocked: boolean;
+  sharedRange?: boolean;
   mapSource: "none" | "osm";
   probe: Probe | undefined;
   initialView?: ViewBounds;
+  controlledView?: ViewBounds;
+  controlledWorldView?: ViewBounds;
   onViewChange: (view: ViewBounds) => void;
+  onWorldViewChange?: (view: ViewBounds) => void;
   onProbe: (probe: Probe) => void;
   onRange: (range: ColorRange) => void;
   onFrameLoaded: () => void;
@@ -85,7 +95,18 @@ export function FieldView(props: FieldViewProps) {
   const changeView = (nextView: ViewBounds) => {
     setView(nextView);
     props.onViewChange(nextView);
+    if (layout && props.onWorldViewChange) {
+      props.onWorldViewChange(worldView(layout, nextView));
+    }
   };
+  useEffect(() => {
+    if (props.controlledView) setView(props.controlledView);
+  }, [
+    props.controlledView?.minimumX,
+    props.controlledView?.maximumX,
+    props.controlledView?.minimumY,
+    props.controlledView?.maximumY,
+  ]);
 
   const availablePlot = {
     left: MARGIN.left,
@@ -94,14 +115,17 @@ export function FieldView(props: FieldViewProps) {
     height: Math.max(1, frameSize.height - MARGIN.top - MARGIN.bottom),
   };
   const request = useMemo(
-    () =>
-      fieldRequest(
+    () => {
+      const ratio = props.settled ? Math.min(2, window.devicePixelRatio || 1) : 1;
+      return fieldRequest(
         props.variable,
         props.display,
         props.indices,
-        { width: availablePlot.width, height: availablePlot.height },
+        { width: availablePlot.width * ratio, height: availablePlot.height * ratio },
         props.settled,
-      ),
+        sourceRegion(view, coordinates),
+      );
+    },
     [
       props.variable,
       props.display,
@@ -109,6 +133,8 @@ export function FieldView(props: FieldViewProps) {
       props.settled,
       availablePlot.width,
       availablePlot.height,
+      view,
+      coordinates,
     ],
   );
 
@@ -133,7 +159,7 @@ export function FieldView(props: FieldViewProps) {
         props.onStatus(nextError.message);
       },
     });
-  }, [request.path, request.selection, request.stride, props.onFrameLoaded, props.onStatus]);
+  }, [request.dataset, request.path, request.selection, request.stride, props.onFrameLoaded, props.onStatus]);
 
   useEffect(() => {
     let active = true;
@@ -165,6 +191,17 @@ export function FieldView(props: FieldViewProps) {
     () => fieldLayout(props.variable, props.display, slice, coordinates),
     [props.variable, props.display, slice, coordinates],
   );
+  useEffect(() => {
+    if (layout && props.controlledWorldView) {
+      setView(normalizedView(layout, props.controlledWorldView));
+    }
+  }, [
+    layout,
+    props.controlledWorldView?.minimumX,
+    props.controlledWorldView?.maximumX,
+    props.controlledWorldView?.minimumY,
+    props.controlledWorldView?.maximumY,
+  ]);
   const plot = layout
     ? fitPlotToBounds(availablePlot, {
         minimumX: layout.xDomain[0],
@@ -178,7 +215,7 @@ export function FieldView(props: FieldViewProps) {
     const node = canvas.current;
     if (!node || !slice || !layout || !(slice.values instanceof Float32Array)) return;
     const automaticRange = finiteRange(slice.values, props.colormap);
-    const nextRange = props.rangeLocked ? props.range : automaticRange;
+    const nextRange = props.rangeLocked || props.sharedRange ? props.range : automaticRange;
     const visible = fieldWindow(layout, view);
     if (
       !props.rangeLocked &&
@@ -218,6 +255,10 @@ export function FieldView(props: FieldViewProps) {
       }
     }
     context.putImageData(image, 0, 0);
+    // Announce a painted canvas, as the mesh view does. A fresh canvas is
+    // 300x150 with no pixels drawn, so its size cannot say whether the slice
+    // has actually reached the screen.
+    node.dataset.rendered = "true";
   }, [
     slice,
     layout,
@@ -242,11 +283,11 @@ export function FieldView(props: FieldViewProps) {
     if (layout.flipY) row = layout.rows - 1 - row;
     const sourceX = Math.min(
       layout.xDimension.length - 1,
-      column * layout.xStride,
+      layout.xStart + column * layout.xStride,
     );
     const sourceY = Math.min(
       layout.yDimension.length - 1,
-      row * layout.yStride,
+      layout.yStart + row * layout.yStride,
     );
     return {
       left: event.clientX - frame.current!.getBoundingClientRect().left,
@@ -309,7 +350,7 @@ export function FieldView(props: FieldViewProps) {
       {props.variable.dimensions.length === 0 ? (
         <div className="scalar-value" aria-label={`${props.variable.name} scalar value`}>
           <strong>{slice ? formatNumber(Number(slice.values[0])) : "—"}</strong>
-          <span>{variableUnit(props.variable)}</span>
+          <span>{displayUnit(props.variable)}</span>
           <small>{props.variable.dtype}</small>
         </div>
       ) : (
@@ -370,6 +411,14 @@ export function FieldView(props: FieldViewProps) {
               yDomain={yDomain}
               xLabel={xLabel}
               yLabel={yLabel}
+              boxed
+            />
+            <Colorbar
+              plot={plot}
+              range={props.range}
+              colormap={props.colormap}
+              scale={props.scale}
+              label={quantityLabel(props.variable)}
             />
             {probePosition && (
               <g
@@ -400,7 +449,6 @@ export function FieldView(props: FieldViewProps) {
               />
             </div>
           )}
-          <Colorbar range={props.range} colormap={props.colormap} scale={props.scale} />
           <ViewControls
             onZoomIn={() => changeView(zoomBounds(view, FULL_FIELD, 0.75))}
             onZoomOut={() => changeView(zoomBounds(view, FULL_FIELD, 4 / 3))}
@@ -413,7 +461,7 @@ export function FieldView(props: FieldViewProps) {
           className="plot-tooltip"
           style={{ left: Math.min(frameSize.width - 210, hover.left + 14), top: hover.top + 12 }}
         >
-          <strong>{formatNumber(hover.value)}</strong> {variableUnit(props.variable)}
+          <strong>{formatNumber(hover.value)}</strong> {displayUnit(props.variable)}
           <span>{formatPosition(props.metadata, props.variable, hover.x, hover.y)}</span>
         </output>
       )}
@@ -452,8 +500,15 @@ function fieldLayout(
   const xDimension = variable.dimensions[display.x];
   const yDimension = variable.dimensions[display.y];
   const requestStride = slice.request.stride.split(",").map(Number);
+  const requestSelection = slice.request.selection.split(",");
+  const selectedRange = (index: number, length: number) => {
+    const [start, stop] = requestSelection[index].split(":");
+    return [Number(start || 0), Number(stop || length)] as const;
+  };
   const xStride = requestStride[display.x];
   const yStride = requestStride[display.y];
+  const [xStart, xStop] = selectedRange(display.x, xDimension.length);
+  const [yStart, yStop] = selectedRange(display.y, yDimension.length);
   const flipX = coordinates.x
     ? coordinates.x.at(-1)! < coordinates.x[0]
     : false;
@@ -475,6 +530,10 @@ function fieldLayout(
     rows,
     xDimension,
     yDimension,
+    xStart,
+    xStop,
+    yStart,
+    yStop,
     xStride,
     yStride,
     flipX,
@@ -485,12 +544,18 @@ function fieldLayout(
     probePosition: (probe: Probe) => {
       const sourceX = probe.indices[xDimension.path];
       const sourceY = probe.indices[yDimension.path];
-      if (sourceX === undefined || sourceY === undefined) return undefined;
-      const fractionX = sourceX / Math.max(1, xDimension.length - 1);
-      const fractionY = sourceY / Math.max(1, yDimension.length - 1);
+      const coordinateFraction = (value: number, domain: [number, number]) =>
+        (value - domain[0]) / (domain[1] - domain[0]);
+      const fractionX = sourceX === undefined
+        ? coordinateFraction(probe.x, xDomain)
+        : (flipX ? 1 - sourceX / Math.max(1, xDimension.length - 1) : sourceX / Math.max(1, xDimension.length - 1));
+      const fractionY = sourceY === undefined
+        ? coordinateFraction(probe.y, yDomain)
+        : (flipY ? sourceY / Math.max(1, yDimension.length - 1) : 1 - sourceY / Math.max(1, yDimension.length - 1));
+      if (!Number.isFinite(fractionX) || !Number.isFinite(fractionY)) return undefined;
       return {
-        x: flipX ? 1 - fractionX : fractionX,
-        y: flipY ? fractionY : 1 - fractionY,
+        x: fractionX,
+        y: fractionY,
       };
     },
   };
@@ -500,10 +565,18 @@ function fieldWindow(
   layout: NonNullable<ReturnType<typeof fieldLayout>>,
   view: ViewBounds,
 ) {
-  const left = view.minimumX;
-  const right = view.maximumX;
-  const top = 1 - view.maximumY;
-  const bottom = 1 - view.minimumY;
+  const xLength = layout.xDimension.length;
+  const yLength = layout.yDimension.length;
+  const sliceLeft = layout.flipX ? 1 - layout.xStop / xLength : layout.xStart / xLength;
+  const sliceRight = layout.flipX ? 1 - layout.xStart / xLength : layout.xStop / xLength;
+  const sliceTop = layout.flipY ? 1 - layout.yStop / yLength : layout.yStart / yLength;
+  const sliceBottom = layout.flipY ? 1 - layout.yStart / yLength : layout.yStop / yLength;
+  const fraction = (value: number, minimum: number, maximum: number) =>
+    Math.max(0, Math.min(1, (value - minimum) / (maximum - minimum)));
+  const left = fraction(view.minimumX, sliceLeft, sliceRight);
+  const right = fraction(view.maximumX, sliceLeft, sliceRight);
+  const top = fraction(1 - view.maximumY, sliceTop, sliceBottom);
+  const bottom = fraction(1 - view.minimumY, sliceTop, sliceBottom);
   const firstColumn = Math.min(layout.columns - 1, Math.floor(left * layout.columns));
   const lastColumn = Math.max(
     firstColumn + 1,
@@ -519,6 +592,17 @@ function fieldWindow(
     firstRow,
     columns: lastColumn - firstColumn,
     rows: lastRow - firstRow,
+  };
+}
+
+function sourceRegion(view: ViewBounds, coordinates: Coordinates): ViewBounds {
+  const flipX = coordinates.x ? coordinates.x.at(-1)! < coordinates.x[0] : false;
+  const flipY = coordinates.y ? coordinates.y.at(-1)! > coordinates.y[0] : true;
+  return {
+    minimumX: flipX ? 1 - view.maximumX : view.minimumX,
+    maximumX: flipX ? 1 - view.minimumX : view.maximumX,
+    minimumY: flipY ? view.minimumY : 1 - view.maximumY,
+    maximumY: flipY ? view.maximumY : 1 - view.minimumY,
   };
 }
 
@@ -550,103 +634,44 @@ function visibleDomain(
   return [domain[0] + minimum * span, domain[0] + maximum * span];
 }
 
-export interface PlotBounds {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
+function worldView(
+  layout: NonNullable<ReturnType<typeof fieldLayout>>,
+  view: ViewBounds,
+): ViewBounds {
+  const x = visibleDomain(layout.xDomain, view.minimumX, view.maximumX);
+  const y = visibleDomain(layout.yDomain, view.minimumY, view.maximumY);
+  return { minimumX: x[0], maximumX: x[1], minimumY: y[0], maximumY: y[1] };
 }
 
-export function PlotAxes({
-  plot,
-  xDomain,
-  yDomain,
-  xLabel,
-  yLabel,
-}: {
-  plot: PlotBounds;
-  xDomain: [number, number];
-  yDomain: [number, number];
-  xLabel: string;
-  yLabel: string;
-}) {
-  const ticks = [0, 0.25, 0.5, 0.75, 1];
-  return (
-    <g className="plot-axis">
-      <path d={`M${plot.left} ${plot.top}V${plot.top + plot.height}H${plot.left + plot.width}`} />
-      {ticks.map((fraction) => {
-        const x = plot.left + fraction * plot.width;
-        const value = xDomain[0] + fraction * (xDomain[1] - xDomain[0]);
-        return (
-          <g key={`x-${fraction}`}>
-            <line x1={x} x2={x} y1={plot.top + plot.height} y2={plot.top + plot.height + 5} />
-            <text x={x} y={plot.top + plot.height + 18} textAnchor="middle">{formatNumber(value)}</text>
-          </g>
-        );
-      })}
-      {ticks.map((fraction) => {
-        const y = plot.top + (1 - fraction) * plot.height;
-        const value = yDomain[0] + fraction * (yDomain[1] - yDomain[0]);
-        return (
-          <g key={`y-${fraction}`}>
-            <line x1={plot.left - 5} x2={plot.left} y1={y} y2={y} />
-            <text x={plot.left - 9} y={y + 4} textAnchor="end">{formatNumber(value)}</text>
-          </g>
-        );
-      })}
-      <text className="axis-label" x={plot.left + plot.width / 2} y={plot.top + plot.height + 42} textAnchor="middle">{xLabel}</text>
-      <text className="axis-label" transform={`translate(18 ${plot.top + plot.height / 2}) rotate(-90)`} textAnchor="middle">{yLabel}</text>
-    </g>
-  );
+function normalizedView(
+  layout: NonNullable<ReturnType<typeof fieldLayout>>,
+  view: ViewBounds,
+): ViewBounds {
+  const axis = (minimum: number, maximum: number, domain: [number, number]) => {
+    const span = domain[1] - domain[0];
+    if (!Number.isFinite(span) || span <= 0) return [0, 1] as const;
+    const fraction = (value: number) => Math.max(0, Math.min(1, (value - domain[0]) / span));
+    return [fraction(minimum), fraction(maximum)] as const;
+  };
+  const x = axis(view.minimumX, view.maximumX, layout.xDomain);
+  const y = axis(view.minimumY, view.maximumY, layout.yDomain);
+  return {
+    minimumX: x[0],
+    maximumX: x[1],
+    minimumY: y[0],
+    maximumY: y[1],
+  };
 }
 
-function coordinateLabel(
+export function coordinateLabel(
   metadata: Metadata,
   variable: Variable,
   axis: "x" | "y",
   fallback: string = axis,
 ): string {
-  if (variable.view_hint.kind !== "rectilinear") return fallback;
-  const path = variable.view_hint[axis];
-  const coordinate = metadata.variables.find((candidate) => candidate.path === path);
+  const hint = variable.view_hint;
+  if (hint.kind === "plain") return fallback;
+  const coordinate = metadata.variables.find((candidate) => candidate.path === hint[axis]);
   if (!coordinate) return fallback;
-  const units = attributeText(coordinate, "units");
-  return units ? `${coordinate.name} (${units})` : coordinate.name;
-}
-
-export function ViewControls({
-  onZoomIn,
-  onZoomOut,
-  onReset,
-}: {
-  onZoomIn: () => void;
-  onZoomOut: () => void;
-  onReset: () => void;
-}) {
-  return (
-    <div className="view-controls" aria-label="Plot view controls">
-      <button title="Zoom in" aria-label="Zoom in" onClick={onZoomIn}>+</button>
-      <button title="Zoom out" aria-label="Zoom out" onClick={onZoomOut}>−</button>
-      <button title="Reset view" onClick={onReset}>Reset</button>
-    </div>
-  );
-}
-
-export function Colorbar({
-  range,
-  colormap,
-  scale,
-}: {
-  range: ColorRange;
-  colormap: Colormap;
-  scale: ColorScale;
-}) {
-  return (
-    <div className="colorbar" aria-label={`${colormap} color range`}>
-      <span>{formatNumber(range.maximum)}</span>
-      <i data-colormap={colormap} />
-      <span>{formatNumber(range.minimum)}</span>
-      <small>{scale}</small>
-    </div>
-  );
+  return quantityLabel(coordinate);
 }

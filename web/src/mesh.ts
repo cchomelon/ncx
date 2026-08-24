@@ -139,6 +139,26 @@ export function buildUgridGeometry(
   return finishGeometry(positions, scalarIndices, coordinateIndices, triangleSources);
 }
 
+export function edgesToFaces(
+  edgeValues: Float32Array,
+  edgeFaces: Int32Array,
+  faceCount: number,
+): Float32Array {
+  if (edgeFaces.length !== edgeValues.length * 2) {
+    throw new Error("UGRID edge-face connectivity must contain two faces per edge");
+  }
+  const sums = new Float32Array(faceCount);
+  const counts = new Uint32Array(faceCount);
+  edgeFaces.forEach((entry, index) => {
+    const face = Number(entry);
+    const value = edgeValues[index >> 1];
+    if (!Number.isFinite(value) || !Number.isInteger(face) || face < 0 || face >= faceCount) return;
+    sums[face] += value;
+    counts[face] += 1;
+  });
+  return Float32Array.from(sums, (sum, face) => counts[face] ? sum / counts[face] : Number.NaN);
+}
+
 export function findMeshHit(
   geometry: MeshGeometry,
   dataX: number,

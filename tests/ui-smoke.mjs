@@ -8,10 +8,10 @@ import { tmpdir } from "node:os";
 const ncx = dirname(dirname(fileURLToPath(import.meta.url)));
 const binary = join(ncx, "target/debug/ncx");
 const browserMode = process.argv[2] ?? "rectilinear";
-if (!["rectilinear", "curvilinear", "ugrid", "ugrid_projected"].includes(browserMode)) {
+if (!["rectilinear", "curvilinear", "ugrid", "ugrid_projected", "comparison", "station"].includes(browserMode)) {
   throw new Error(`unknown browser fixture ${JSON.stringify(browserMode)}`);
 }
-const fixture = join(ncx, `tests/data/${browserMode}.nc`);
+const fixture = join(ncx, `tests/data/${browserMode === "comparison" ? "rectilinear" : browserMode}.nc`);
 
 const injected = `<script>
 window.__ncxErrors = [];
@@ -35,6 +35,9 @@ window.fetch = async (...arguments) => {
     window.__ncxMaxScalarReads = Math.max(window.__ncxMaxScalarReads, window.__ncxScalarReads);
   }
   try {
+    if (scalar && target.includes("dataset=case-c")) {
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    }
     return await originalFetch(...arguments);
   } finally {
     if (scalar) window.__ncxScalarReads -= 1;
@@ -52,12 +55,21 @@ const waitFor = async (test, message, timeout = 4000) => {
   }
   throw new Error(message);
 };
-const axisText = () => [...document.querySelectorAll(".plot-axis text")].map((node) => node.textContent).join("|");
+// The plotted extent, read from the axes. Comparing tick text instead only
+// detected a view change when it happened to move a label, which a small pan
+// across round-numbered ticks does not.
+const axisExtent = () => {
+  const axis = document.querySelector(".plot-axis");
+  return (axis?.dataset.xDomain ?? "") + "|" + (axis?.dataset.yDomain ?? "");
+};
 const hasCorrectAspect = (canvas) => {
-  const labels = [...document.querySelectorAll(".plot-axis > g text")]
-    .map((node) => Number(node.textContent.replaceAll(",", "")));
-  if (labels.length < 10 || labels.some((value) => !Number.isFinite(value))) return false;
-  const dataAspect = Math.abs((labels[4] - labels[0]) / (labels[9] - labels[5]));
+  const axis = document.querySelector(".plot-axis");
+  const span = (name) => {
+    const parts = (axis?.dataset[name] ?? "").split(",").map(Number);
+    return parts.length === 2 && parts.every(Number.isFinite) ? Math.abs(parts[1] - parts[0]) : 0;
+  };
+  const dataAspect = span("xDomain") / span("yDomain");
+  if (!Number.isFinite(dataAspect) || dataAspect <= 0) return false;
   const bounds = canvas.getBoundingClientRect();
   return Math.abs(dataAspect / (bounds.width / bounds.height) - 1) < 0.04;
 };
@@ -65,7 +77,151 @@ const failures = [];
 try {
   window.__ncxStep = "initial field";
   const shell = await waitFor(() => document.querySelector(".shell"), "application shell did not mount");
-  if (browserMode !== "rectilinear") {
+  if (browserMode === "station") {
+    const controls = await waitFor(() => {
+      const items = [...document.querySelectorAll(".single-curve .series-control")];
+      return items.length === 2 ? items : null;
+    }, "hosted station did not receive its comparison series");
+    const active = document.querySelector(".view-tabs button.active")?.textContent;
+    if (active !== "Curve") failures.push("hosted station did not stay in Curve");
+    if ([...document.querySelectorAll(".view-tabs button")]
+      .some((button) => button.textContent === "Compare")) {
+      failures.push("single-station viewer still exposed Compare");
+    }
+    if (!controls[1].textContent.includes("TPK astronomical reference")) {
+      failures.push("hosted station received the wrong comparison series");
+    }
+    if (!controls[0].textContent.includes("MSL") || !controls[1].textContent.includes("CD")) {
+      failures.push("station curve hid the series datums");
+    }
+    if (document.querySelector(".datum-warning")) failures.push("station curve exposed a datum gate");
+    if (controls[1].querySelector('input[type="number"]')) {
+      failures.push("CD reference exposed duplicate offsets");
+    }
+    const cd = controls[1].querySelector('input[type="checkbox"]');
+    if (!cd || !cd.parentElement.textContent.includes("CD")) {
+      failures.push("CD offset preset is missing");
+    }
+    const modelY = controls[0].querySelectorAll("input")[1];
+    cd?.click();
+    await waitFor(() => modelY?.value === "1.45", "CD preset did not set the primary Y offset");
+    await waitFor(
+      () => document.querySelector(".comparison-line")?.getAttribute("d"),
+      "station comparison disappeared after a Y offset",
+    );
+    const curve = document.querySelector(".curve-svg");
+    const bounds = curve.getBoundingClientRect();
+    curve.dispatchEvent(new PointerEvent("pointermove", {
+      bubbles: true,
+      clientX: bounds.left + bounds.width * 0.55,
+      clientY: bounds.top + bounds.height * 0.5,
+    }));
+    await waitFor(() => document.querySelector(".hover-crosshair"), "station crosshair did not render");
+    if (document.querySelectorAll(".hover-dot").length !== 2) {
+      failures.push("station crosshair did not mark both series");
+    }
+    const tooltip = document.querySelector(".curve-tooltip")?.textContent ?? "";
+    if (!tooltip.includes("TPK astronomical reference")) {
+      failures.push("station crosshair did not report the reference value");
+    }
+    if ((tooltip.match(/HKT/g) ?? []).length !== 2) {
+      failures.push("station crosshair did not label both sample times");
+    }
+  } else if (browserMode === "comparison") {
+    const dataset = await waitFor(
+      () => document.querySelector(".dataset-switcher select"),
+      "dataset selector did not appear",
+    );
+    dataset.value = "case-f";
+    dataset.dispatchEvent(new Event("change", { bubbles: true }));
+    await waitFor(
+      () => document.querySelector(".shell")?.dataset.dataset === "case-f",
+      "sixth dataset did not become primary",
+    );
+    const compare = await waitFor(
+      () => [...document.querySelectorAll(".view-tabs button")].find((button) => button.textContent === "Compare"),
+      "Compare tab did not appear",
+    );
+    if (compare.disabled) failures.push("Compare tab is disabled for multiple datasets");
+    compare.click();
+    const panes = await waitFor(
+      () => {
+        const items = [...document.querySelectorAll(".field-comparison-pane")];
+        return items.length === 4 && items.every((item) => item.querySelector(".field-canvas[data-rendered='true']"))
+          ? items
+          : null;
+      },
+      "four field comparison panes did not render",
+    );
+    if (!panes[0].querySelector("header")?.textContent.includes("case-f")) {
+      failures.push("selected sixth dataset was omitted as the comparison primary");
+    }
+    if (!panes.every((pane) => pane.querySelector("header")?.textContent.includes("Δ 0.0 min"))) {
+      failures.push("field panes did not report their actual matched timestamp delta");
+    }
+    const axes = () => [...document.querySelectorAll(".field-comparison-pane .plot-axis")]
+      .map((axis) => axis.dataset.xDomain + "|" + axis.dataset.yDomain);
+    const before = axes();
+    panes[0].querySelector('button[title="Zoom in"]').click();
+    await waitFor(() => {
+      const after = axes();
+      return after.length === 4 && after[0] !== before[0] && after.every((extent) => extent === after[0]);
+    }, "field comparison panes did not synchronize zoom");
+    if (!window.__ncxFetches.some((url) => url.includes("dataset=case-a")) ||
+        !window.__ncxFetches.some((url) => url.includes("dataset=case-b"))) {
+      failures.push("comparison data reads were not qualified by dataset ID");
+    }
+    window.__ncxMaxScalarReads = 0;
+    const timeline = document.querySelector('.timeline input[type="range"]');
+    const visitedFrames = new Set([timeline.value]);
+    document.querySelector('button[title="Play forward"]').click();
+    const playbackDeadline = performance.now() + 1300;
+    while (performance.now() < playbackDeadline) {
+      visitedFrames.add(timeline.value);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    document.querySelector('button[title="Stop"]').click();
+    if (visitedFrames.size < 2) failures.push("field comparison playback did not advance");
+    if (window.__ncxMaxScalarReads > 4) {
+      failures.push("field comparison advanced before its slowest pane loaded");
+    }
+    const supporting = [...document.querySelectorAll(".variable-filter label")]
+      .find((label) => label.textContent.includes("Show coordinates"))?.querySelector("input");
+    supporting.click();
+    const latitude = await waitFor(
+      () => [...document.querySelectorAll(".variable-row")]
+        .find((button) => button.querySelector("span")?.textContent === "lat"),
+      "numeric coordinate variable did not appear",
+    );
+    latitude.click();
+    await waitFor(() => document.querySelector(".figure-head h1")?.textContent.includes("latitude"),
+      "numeric coordinate curve did not open");
+    await waitFor(() => document.querySelector(".curve-line")?.getAttribute("d"),
+      "numeric coordinate curve did not render");
+    [...document.querySelectorAll(".view-tabs button")]
+      .find((button) => button.textContent === "Compare").click();
+    const numericComparison = await waitFor(
+      () => document.querySelector(".comparison-figure .series-control")
+        ? document.querySelector(".comparison-figure")
+        : null,
+      "numeric curve comparison did not render",
+    );
+    const numericLabels = [...numericComparison.querySelectorAll(".series-control label")]
+      .map((label) => label.textContent.trim());
+    const linePatterns = await waitFor(() => {
+      const lines = [...numericComparison.querySelectorAll(".comparison-line")];
+      return lines.length > 1 ? new Set(lines.map((line) => line.style.strokeDasharray)) : null;
+    }, "numeric comparison lines did not render");
+    if (linePatterns.size < 2) failures.push("comparison series use colour as their only channel");
+    const keyPatterns = new Set([...numericComparison.querySelectorAll(".series-key line")]
+      .map((line) => line.style.strokeDasharray));
+    if ([...linePatterns].some((pattern) => !keyPatterns.has(pattern))) {
+      failures.push("comparison line patterns are missing from the series keys");
+    }
+    if (numericLabels.some((label) => label.startsWith("X offset"))) {
+      failures.push("numeric curve exposed a minute offset: " + numericLabels.join(" | "));
+    }
+  } else if (browserMode !== "rectilinear") {
     const canvas = await waitFor(() => {
       const node = document.querySelector(".mesh-canvas[data-rendered='true']");
       return node && !document.querySelector(".plot-loading") ? node : null;
@@ -82,7 +238,7 @@ try {
     }
 
     window.__ncxStep = "mesh zoom";
-    const beforeZoom = axisText();
+    const beforeZoom = axisExtent();
     const bounds = canvas.getBoundingClientRect();
     const pointer = (type, x, y, options = {}) => canvas.dispatchEvent(new PointerEvent(type, {
       bubbles: true,
@@ -100,24 +256,24 @@ try {
     pointer("pointerdown", 0.2, 0.2);
     pointer("pointermove", 0.8, 0.8);
     pointer("pointerup", 0.8, 0.8);
-    await waitFor(() => axisText() !== beforeZoom, "mesh box zoom did not update axes");
+    await waitFor(() => axisExtent() !== beforeZoom, "mesh box zoom did not update axes");
     if (!hasCorrectAspect(canvas)) failures.push("mesh box zoom stretched the coordinate aspect");
-    const beforePan = axisText();
+    const beforePan = axisExtent();
     pointer("pointerdown", 0.5, 0.5, { button: 1, buttons: 4 });
     pointer("pointermove", 0.6, 0.55, { button: 1, buttons: 4 });
     pointer("pointerup", 0.6, 0.55, { button: 1 });
-    await waitFor(() => axisText() !== beforePan, "middle-button mesh pan did not update axes");
+    await waitFor(() => axisExtent() !== beforePan, "middle-button mesh pan did not update axes");
     document.querySelector('button[title="Reset view"]').click();
-    await waitFor(() => axisText() === beforeZoom, "mesh Reset view did not restore the full extent");
+    await waitFor(() => axisExtent() === beforeZoom, "mesh Reset view did not restore the full extent");
     document.querySelector('button[title="Zoom in"]').click();
-    await waitFor(() => axisText() !== beforeZoom, "mesh Zoom in did not update axes");
+    await waitFor(() => axisExtent() !== beforeZoom, "mesh Zoom in did not update axes");
     document.querySelector('button[title="Zoom out"]').click();
-    await waitFor(() => axisText() === beforeZoom, "mesh Zoom out did not restore the previous extent");
+    await waitFor(() => axisExtent() === beforeZoom, "mesh Zoom out did not restore the previous extent");
     pointer("pointerdown", 0.25, 0.25);
     pointer("pointermove", 0.75, 0.75);
     pointer("pointerup", 0.75, 0.75);
-    await waitFor(() => axisText() !== beforeZoom, "mesh persistence zoom did not update axes");
-    const meshViewBeforeTab = axisText();
+    await waitFor(() => axisExtent() !== beforeZoom, "mesh persistence zoom did not update axes");
+    const meshViewBeforeTab = axisExtent();
 
     window.__ncxStep = "mesh probe";
     pointer("pointerdown", 0.5, 0.5);
@@ -127,22 +283,54 @@ try {
     if (!/°[NS].*°[EW]/.test(document.querySelector(".figure-head span")?.textContent ?? "")) failures.push("mesh probe subtitle did not use latitude then longitude");
     [...document.querySelectorAll(".view-tabs button")].find((button) => button.textContent === "Curve").click();
     await waitFor(() => document.querySelector(".curve-line")?.getAttribute("d"), "mesh probe curve did not render");
-    if (!document.querySelector(".axis-label")?.textContent.includes("Time (UTC)")) failures.push("mesh curve lost CF time");
+    if (!document.querySelector(".axis-label")?.textContent.includes("Time (HKT)")) failures.push("mesh curve lost CF time");
+    const offsetInputs = [...document.querySelectorAll(".curve-offset-controls input")];
+    if (offsetInputs.length !== 2) failures.push("single-case time curve offsets are missing");
+    if (offsetInputs[0]) {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")
+        .set.call(offsetInputs[0], "15");
+      offsetInputs[0].dispatchEvent(new Event("input", { bubbles: true }));
+      await waitFor(
+        () => [...document.querySelectorAll(".axis-label")]
+          .some((label) => label.textContent.includes("x offset +15 min")),
+        "single-case X offset was not applied",
+      );
+    }
     [...document.querySelectorAll(".view-tabs button")].find((button) => button.textContent === "Field").click();
     await waitFor(() => document.querySelector(".mesh-canvas[data-rendered='true']") && !document.querySelector(".plot-loading"), "mesh Field view did not return");
-    if (axisText() !== meshViewBeforeTab) failures.push("mesh zoom reset after Curve → Field tab switch");
+    if (axisExtent() !== meshViewBeforeTab) failures.push("mesh zoom reset after Curve → Field tab switch");
 
     if (browserMode === "ugrid") {
       window.__ncxStep = "UGRID face field";
       [...document.querySelectorAll(".variable-row")]
         .find((button) => button.textContent.includes("face_depth"))?.click();
       await waitFor(() => document.querySelector(".mesh-location")?.textContent.includes("face") && document.querySelector(".mesh-canvas[data-rendered='true']"), "UGRID face field did not render");
+      window.__ncxStep = "UGRID edge field";
+      [...document.querySelectorAll(".variable-row")]
+        .find((button) => button.textContent.includes("edge_current"))?.click();
+      await waitFor(() => document.querySelector(".mesh-location")?.textContent.includes("edge") && document.querySelector(".mesh-canvas[data-rendered='true']"), "UGRID edge field did not render");
+      const edgeCanvas = document.querySelector(".mesh-canvas");
+      const edgeBounds = edgeCanvas.getBoundingClientRect();
+      for (const type of ["pointerdown", "pointerup"]) {
+        edgeCanvas.dispatchEvent(new PointerEvent(type, {
+          bubbles: true,
+          clientX: edgeBounds.left + edgeBounds.width * 0.75,
+          clientY: edgeBounds.top + edgeBounds.height * 0.5,
+          button: 0,
+        }));
+      }
+      await waitFor(() => document.querySelector(".probe-mark"), "UGRID edge probe did not appear");
+      [...document.querySelectorAll(".view-tabs button")].find((button) => button.textContent === "Curve").click();
+      await waitFor(
+        () => document.querySelector(".curve-axis")?.dataset.yDomain === "4.25,6.25",
+        "UGRID edge probe curve did not average the face's adjacent edges",
+      );
     }
     if (shell !== document.querySelector(".shell")) failures.push("mesh interactions replaced the application shell");
   } else {
   const canvas = await waitFor(() => {
-    const node = document.querySelector(".field-canvas");
-    return node && node.width > 1 && !document.querySelector(".plot-loading") ? node : null;
+    const node = document.querySelector(".field-canvas[data-rendered='true']");
+    return node && !document.querySelector(".plot-loading") ? node : null;
   }, "field slice did not render");
   if (!document.querySelector(".path")?.textContent.includes("rectilinear.nc")) failures.push("dataset identity is missing");
   if (!document.querySelector(".statusbar")?.textContent.includes("dim(")) failures.push("status shape does not identify display dimensions");
@@ -193,28 +381,28 @@ try {
   for (const title of ["Zoom in", "Zoom out", "Reset view"]) {
     if (!document.querySelector('button[title="' + title + '"]')) failures.push(title + " control is missing");
   }
-  const axisBeforeZoom = axisText();
+  const axisBeforeZoom = axisExtent();
   fieldPointer("pointerdown", 0.2, 0.2);
   fieldPointer("pointermove", 0.8, 0.8);
   fieldPointer("pointerup", 0.8, 0.8);
-  await waitFor(() => axisText() !== axisBeforeZoom, "field box zoom did not update axes");
+  await waitFor(() => axisExtent() !== axisBeforeZoom, "field box zoom did not update axes");
   if (!hasCorrectAspect(canvas)) failures.push("field box zoom stretched the coordinate aspect");
-  const fieldBeforePan = axisText();
+  const fieldBeforePan = axisExtent();
   fieldPointer("pointerdown", 0.5, 0.5, { button: 1, buttons: 4 });
   fieldPointer("pointermove", 0.6, 0.55, { button: 1, buttons: 4 });
   fieldPointer("pointerup", 0.6, 0.55, { button: 1 });
-  await waitFor(() => axisText() !== fieldBeforePan, "middle-button field pan did not update axes");
+  await waitFor(() => axisExtent() !== fieldBeforePan, "middle-button field pan did not update axes");
   document.querySelector('button[title="Reset view"]').click();
-  await waitFor(() => axisText() === axisBeforeZoom, "field Reset view did not restore the full extent");
+  await waitFor(() => axisExtent() === axisBeforeZoom, "field Reset view did not restore the full extent");
   document.querySelector('button[title="Zoom in"]').click();
-  await waitFor(() => axisText() !== axisBeforeZoom, "field Zoom in did not update axes");
+  await waitFor(() => axisExtent() !== axisBeforeZoom, "field Zoom in did not update axes");
   document.querySelector('button[title="Zoom out"]').click();
-  await waitFor(() => axisText() === axisBeforeZoom, "field Zoom out did not restore the previous extent");
+  await waitFor(() => axisExtent() === axisBeforeZoom, "field Zoom out did not restore the previous extent");
   fieldPointer("pointerdown", 0.25, 0.25);
   fieldPointer("pointermove", 0.75, 0.75);
   fieldPointer("pointerup", 0.75, 0.75);
-  await waitFor(() => axisText() !== axisBeforeZoom, "field persistence zoom did not update axes");
-  const fieldViewBeforeTab = axisText();
+  await waitFor(() => axisExtent() !== axisBeforeZoom, "field persistence zoom did not update axes");
+  const fieldViewBeforeTab = axisExtent();
   if (!document.querySelector('button[title="Save plot as PNG"]')) failures.push("plot PNG control is missing");
 
   window.__ncxStep = "probe";
@@ -245,8 +433,8 @@ try {
 
   window.__ncxStep = "field return";
   [...document.querySelectorAll(".view-tabs button")].find((button) => button.textContent === "Field").click();
-  await waitFor(() => document.querySelector(".field-canvas") && !document.querySelector(".plot-loading"), "Field view did not return");
-  if (axisText() !== fieldViewBeforeTab) failures.push("field zoom reset after Curve → Field tab switch");
+  await waitFor(() => document.querySelector(".field-canvas[data-rendered='true']") && !document.querySelector(".plot-loading"), "Field view did not return");
+  if (axisExtent() !== fieldViewBeforeTab) failures.push("field zoom reset after Curve → Field tab switch");
   if (shell !== document.querySelector(".shell")) failures.push("view switch replaced the application shell");
   if (document.querySelectorAll(".field-canvas").length !== 1) failures.push("view switch duplicated the field canvas");
 
@@ -275,7 +463,15 @@ failures.push(...window.__ncxErrors);
 await fetch("/__result?payload=" + encodeURIComponent(JSON.stringify({ failures, fetches: window.__ncxFetches.length })));
 </script>`;
 
-const child = spawn(binary, ["serve", "--port", "0", fixture], {
+const childArguments = browserMode === "comparison"
+  ? [
+      "serve",
+      "--port",
+      "0",
+      ...["a", "b", "c", "d", "e", "f"].flatMap((id) => ["--dataset", `case-${id}=${fixture}`]),
+    ]
+  : ["serve", "--port", "0", fixture];
+const child = spawn(binary, childArguments, {
   cwd: ncx,
   stdio: ["ignore", "pipe", "pipe"],
 });
@@ -298,6 +494,24 @@ const upstreamPort = await new Promise((resolve, reject) => {
 let finish;
 const result = new Promise((resolve) => { finish = resolve; });
 let proxyHits = 0;
+const stationOrigin = Date.parse("2025-09-20T09:00:00Z");
+const stationSamples = 23_039;
+const stationSeries = [{
+  id: "reference:TPK",
+  label: "TPK astronomical reference",
+  quantity: "sea_surface_height_above_mean_sea_level",
+  location_id: "TPK",
+  x_units: "milliseconds since 1970-01-01T00:00:00Z",
+  x: Array.from({ length: stationSamples }, (_, index) => stationOrigin + index * 60_000),
+  y_units: "m",
+  vertical_datum: "CD",
+  primary_y_offset: 1.45,
+  y: Array.from({ length: stationSamples }, (_, index) => Math.sin(index / 1440)),
+}];
+const stationHost = `<!doctype html><style>html,body,iframe{width:100%;height:100%;margin:0;border:0}</style>
+<iframe src="/ncx/?display_zone=HKT%2C480&comparison_host=1&generation=1"></iframe>
+<script>addEventListener("message",(event)=>{const request=event.data;if(request?.type!=="ncx:comparison-request"||request.quantity!=="sea_surface_height_above_mean_sea_level"||request.units!=="m")return;
+event.source.postMessage({type:"ncx:comparison-ready",request_id:request.request_id,generation:request.generation,series:${JSON.stringify(stationSeries)}},location.origin)});</script>`;
 const proxy = createServer(async (request, response) => {
   proxyHits += 1;
   const url = new URL(request.url, "http://127.0.0.1");
@@ -306,10 +520,18 @@ const proxy = createServer(async (request, response) => {
     finish(JSON.parse(url.searchParams.get("payload")));
     return;
   }
+  if (browserMode === "station" && url.pathname === "/host") {
+    response.setHeader("Content-Type", "text/html");
+    response.end(stationHost);
+    return;
+  }
   try {
-    const upstream = await fetch(`http://127.0.0.1:${upstreamPort}${request.url}`);
+    const upstreamPath = browserMode === "station" && url.pathname.startsWith("/ncx/")
+      ? request.url.slice(4)
+      : request.url;
+    const upstream = await fetch(`http://127.0.0.1:${upstreamPort}${upstreamPath}`);
     let body = Buffer.from(await upstream.arrayBuffer());
-    if (url.pathname === "/") {
+    if (new URL(upstreamPath, "http://127.0.0.1").pathname === "/") {
       body = Buffer.from(body.toString().replace('<script type="module"', `${injected}<script type="module"`));
     }
     response.statusCode = upstream.status;
@@ -337,7 +559,15 @@ user_pref("toolkit.telemetry.unified", false);
 `);
 const browser = spawn(
   "firefox",
-  ["--headless", "-no-remote", "-profile", profile, `http://127.0.0.1:${proxyPort}/`],
+  [
+    "--headless",
+    "-no-remote",
+    "-profile",
+    profile,
+    browserMode === "station"
+      ? `http://127.0.0.1:${proxyPort}/host`
+      : `http://127.0.0.1:${proxyPort}/?display_zone=HKT%2C480&comparison_host=1&generation=1`,
+  ],
   { stdio: ["ignore", "ignore", "pipe"] },
 );
 let browserError = "";

@@ -4,16 +4,20 @@ use crate::dataset::{DatasetMetadata, VariableSummary, ViewHint};
 
 /// Add conservative display defaults without changing the file's raw metadata.
 pub fn add_view_hints(metadata: &mut DatasetMetadata) -> HashSet<String> {
-    let mut connectivity_variables = HashSet::new();
+    let connectivity_variables = metadata
+        .variables
+        .iter()
+        .filter(|variable| {
+            attribute_text(variable, "cf_role").is_some_and(|role| role.ends_with("_connectivity"))
+        })
+        .map(|variable| variable.path.clone())
+        .collect();
     let mut hints = Vec::with_capacity(metadata.variables.len());
     let mut warnings = Vec::new();
 
     for variable in &metadata.variables {
         match detect_ugrid(variable, metadata) {
-            Ok(Some((hint, connectivity))) => {
-                connectivity_variables.insert(connectivity);
-                hints.push(hint);
-            }
+            Ok(Some(hint)) => hints.push(hint),
             Ok(None) => hints.push(detect_structured(variable, metadata, &mut warnings)),
             Err(warning) => {
                 warnings.push(format!("{}: {warning}", variable.path));
@@ -32,7 +36,7 @@ pub fn add_view_hints(metadata: &mut DatasetMetadata) -> HashSet<String> {
 fn detect_ugrid(
     variable: &VariableSummary,
     metadata: &DatasetMetadata,
-) -> Result<Option<(ViewHint, String)>, String> {
+) -> Result<Option<ViewHint>, String> {
     let Some(mesh_reference) = attribute_text(variable, "mesh") else {
         return Ok(None);
     };
@@ -65,19 +69,16 @@ fn detect_ugrid(
         ));
     }
     let location = attribute_text(variable, "location")
-        .filter(|location| matches!(*location, "node" | "face"))
-        .ok_or_else(|| "UGRID data location must be `node` or `face`".to_owned())?;
+        .filter(|location| matches!(*location, "node" | "edge" | "face"))
+        .ok_or_else(|| "UGRID data location must be `node`, `edge`, or `face`".to_owned())?;
 
-    Ok(Some((
-        ViewHint::Ugrid2d {
-            mesh: mesh_path,
-            x,
-            y,
-            face_node_connectivity: connectivity.clone(),
-            location: location.to_owned(),
-        },
-        connectivity,
-    )))
+    Ok(Some(ViewHint::Ugrid2d {
+        mesh: mesh_path,
+        x,
+        y,
+        face_node_connectivity: connectivity,
+        location: location.to_owned(),
+    }))
 }
 
 fn detect_structured(

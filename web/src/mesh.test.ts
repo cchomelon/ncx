@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildCurvilinearGeometry, buildUgridGeometry, findMeshHit } from "./mesh.ts";
+import { buildCurvilinearGeometry, buildUgridGeometry, edgesToFaces, findMeshHit } from "./mesh.ts";
 
 test("omits curvilinear quads with invalid coordinates", () => {
   const x = Float32Array.of(0, 1, 2, 0, 1, 2);
@@ -18,6 +18,15 @@ test("normalizes padded one-based UGRID polygons and preserves face scalars", ()
   const geometry = buildUgridGeometry(x, y, connectivity, 1, 6, 1, [-1], "face");
   assert.equal(geometry.triangleSources.length, 3);
   assert.deepEqual([...new Set(geometry.scalarIndices)], [0]);
+});
+
+test("averages edge values onto their adjacent faces", () => {
+  assert.deepEqual(
+    [...edgesToFaces(Float32Array.of(2, 4, 8), Int32Array.of(0, -1, 0, 1, 1, -1), 2)],
+    [3, 6],
+  );
+  assert.ok(Number.isNaN(edgesToFaces(Float32Array.of(2), Int32Array.of(-1, -1), 1)[0]));
+  assert.throws(() => edgesToFaces(Float32Array.of(2), Int32Array.of(0), 1), /two faces per edge/);
 });
 
 test("keeps UGRID node scalars and rejects out-of-range connectivity", () => {

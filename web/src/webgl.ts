@@ -1,5 +1,10 @@
-import { colorForValue, paletteBytes, type ColorRange } from "./color";
-import type { Colormap, ColorScale } from "./model";
+import {
+  colorForValue,
+  paletteBytes,
+  type ColormapChoice,
+  type ColorRange,
+} from "./color";
+import type { ColorScale } from "./model";
 import type { Bounds, MeshGeometry } from "./mesh";
 
 const VERTEX_SHADER = `#version 300 es
@@ -60,7 +65,7 @@ void main() {
 }`;
 
 export interface MeshDrawSettings {
-  colormap: Colormap;
+  colormap: ColormapChoice;
   scale: ColorScale;
   range: ColorRange;
   view: Bounds;
@@ -91,7 +96,7 @@ class MeshRenderer implements MeshSurface {
   private readonly valueBuffer: WebGLBuffer;
   private readonly palette: WebGLTexture;
   private uploadedGeometry: MeshGeometry | undefined;
-  private uploadedColormap: Colormap | undefined;
+  private uploadedColormap: ColormapChoice | undefined;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     const gl = canvas.getContext("webgl2", { alpha: false, antialias: true });

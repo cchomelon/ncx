@@ -9,4 +9,4 @@ license = "MIT"
 axum = "0.8.9"
 netcdf = { version = "0.12.1", default-features = false }
 serde = { version = "1.0.229", features = ["derive"] }
-tokio = { version = "1.53.1", features = ["io-util", "macros", "net", "process", "rt-multi-thread", "signal", "time"] }
+tokio = { version = "1.53.1", features = ["io-std", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "time"] }

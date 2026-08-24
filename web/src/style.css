@@ -1,46 +1,117 @@
 @font-face {
   font-family: "AVHershey Simplex";
-  src: url("/Style/Fonts/AVHershey-OTF/otf/AVHersheySimplexLight.otf") format("opentype");
+  src: url("../Style/Fonts/AVHershey-OTF/otf/AVHersheySimplexLight.otf") format("opentype");
   font-weight: 300;
   font-display: swap;
 }
 
 @font-face {
   font-family: "AVHershey Simplex";
-  src: url("/Style/Fonts/AVHershey-OTF/otf/AVHersheySimplexMedium.otf") format("opentype");
+  src: url("../Style/Fonts/AVHershey-OTF/otf/AVHersheySimplexMedium.otf") format("opentype");
   font-weight: 400;
   font-display: swap;
 }
 
 @font-face {
   font-family: "AVHershey Simplex";
-  src: url("/Style/Fonts/AVHershey-OTF/otf/AVHersheySimplexHeavy.otf") format("opentype");
+  src: url("../Style/Fonts/AVHershey-OTF/otf/AVHersheySimplexHeavy.otf") format("opentype");
   font-weight: 700;
   font-display: swap;
 }
 
 :root {
+  /* --------------------------------------------------------------------
+     Tokens, from Style/. The names are the style's own, so a value here and
+     a value in plotstyle mean the same thing.
+
+     Web additions the print system has no need of:
+       * every size is in rem, so the browser's own font size and the
+         reader's zoom still work. Never px on type.
+       * hit targets clear 24px (WCAG 2.2 target size, minimum), and the
+         inputs a reader drags clear 44px on coarse pointers.
+
+     One canvas only: `plate`, the white one. The style has a dark variant and
+     the browser will happily report a reader's preference for it, but this
+     viewer does not follow it. A field is read against its colour bar, and
+     every colour map here is built and calibrated against white paper -- the
+     same field on a dark canvas reads a shade differently, which is exactly
+     the sort of drift a shared style exists to prevent. Anyone wanting the
+     dark variant should take it in the Python figures, where the whole
+     palette moves with the canvas together.
+     -------------------------------------------------------------------- */
   color-scheme: light;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 13px;
-  color: #101418;
-  background: #fff;
+
+  /* Ink, from palette.INK. Six named greys and nothing else: furniture must
+     never compete with data, and it cannot if it has no colour to do it with. */
   --paper: #fff;
   --panel: #fbfaf7;
   --ink: #101418;
   --ink-medium: #4a5058;
-  --ink-weak: #8a9099;
+  --ink-weak: #9aa0a8; /* gridlines and hairlines only -- never text */
+  --ink-faint: #e4e7ea;
+  /* De-emphasised *text*. The print style sets a datum label in INK.reference
+     (#8a9099), which is right on paper and 3.2:1 on a screen -- below the 4.5:1
+     WCAG 2.2 SC 1.4.3 asks of body text, and these labels are 9-10px. So the
+     web gets a fourth grey: the same job, dark enough to be legal. Gridlines
+     keep --ink-weak, which carries no text and is held to 3:1 as a graphical
+     object under SC 1.4.11. */
+  --ink-quiet: #6e747d;
   --line: #dcdfe3;
   --line-faint: #ecedef;
-  --accent: #0072b2;
-  --accent-pale: #e9f2f8;
+
+  /* The accent is cycle()[3] -- the blue the Python style binds to reference
+     data. Not a UI colour picked separately: an app and its figures that
+     disagree about blue look like two products. */
+  --accent: #114160;
+  --accent-pale: #e7edf2;
+
+  /* Type. base 8pt on the modular scale ratio 2^(1/4), expressed in rem
+     against a 16px root so the ladder survives the reader's own font size:
+     8 / 9.51 / 11.31 / 13.45 pt -> 0.667 / 0.792 / 0.943 / 1.121 rem.
+     `--size-micro` is the flat 0.85x the style uses for provenance lines. */
+  --size-micro: 0.567rem;
+  --size-tick: 0.667rem;
+  --size-body: 0.792rem;
+  --size-title: 0.943rem;
+  --size-figure: 1.121rem;
+  --line-height: 1.35; /* rc.LINESPACING: Simplex's ascent needs the room */
+
+  /* Stroke, from rc.S0 = 0.7 pt. Web floors every furniture weight at the
+     hairline a 1x display can actually draw -- below 1 device pixel the
+     browser antialiases a 0.35 line into a grey smear, which is worse than
+     the heavier line it was avoiding. Data weights keep their ratios. */
+  --stroke-grid: 0.7px;
+  --stroke-spine: 1px;
+  --stroke-reference: 1.25px;
+  --stroke-data-minor: 1.25px;
+  --stroke-data: 1.75px;
+  --stroke-emphasis: 2.25px;
+
   --plot-face: "AVHershey Simplex", system-ui, sans-serif;
   --mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, monospace;
+  --hit: 24px; /* WCAG 2.2 SC 2.5.8, minimum target */
+
+  /* Status colours. Never the only channel -- each is paired with a word or an
+     icon in the markup -- but they still have to clear 4.5:1 against their own
+     background for the text they carry. */
+  --warn-bg: #fff9e8;
+  --warn-ink: #4a3a12;
+  --error-bg: #fff5f3;
+  --error-line: #a54545;
+  --error-ink: #7b2525;
+  --raised: rgb(255 255 255 / 88%); /* tooltips and chips over data */
+  --shadow: rgb(0 0 0 / 8%);
+
   --topbar-height: 38px;
-  --toolbar-height: 40px;
+  --toolbar-height: 46px;
   --timeline-height: 68px;
   --status-height: 25px;
   --sidebar-width: 260px;
+
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: var(--size-body);
+  color: var(--ink);
+  background: var(--paper);
 }
 
 * {
@@ -95,7 +166,7 @@ input:focus-visible {
 button:disabled {
   cursor: default;
   color: var(--ink-weak);
-  background: #f5f5f3;
+  background: var(--ink-faint);
 }
 
 .startup {
@@ -167,18 +238,41 @@ button:disabled {
 }
 
 .path i {
-  color: var(--ink-weak);
+  color: var(--ink-quiet);
   font-style: normal;
+}
+
+.dataset-switcher {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-right: 1px solid var(--line);
+  color: var(--ink-quiet);
+  font-size: var(--size-tick);
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.dataset-switcher select {
+  min-width: 120px;
+  font-family: var(--mono);
+  text-transform: none;
 }
 
 .read-only {
   margin-left: auto;
   padding: 2px 8px;
   border-left: 1px solid var(--line);
-  color: var(--ink-weak);
+  color: var(--ink-quiet);
   font-family: var(--mono);
   font-size: 9px;
   letter-spacing: 0.08em;
+}
+
+.shell[data-embedded="true"] .topbar .brand,
+.shell[data-embedded="true"] .topbar .path {
+  display: none;
 }
 
 .sidebar {
@@ -214,8 +308,8 @@ button:disabled {
 
 .dataset-head span {
   flex: none;
-  color: var(--ink-weak);
-  font-size: 10px;
+  color: var(--ink-quiet);
+  font-size: 0.625rem;
 }
 
 .variable-filter {
@@ -234,7 +328,7 @@ button:disabled {
   gap: 5px;
   margin-top: 6px;
   color: var(--ink-medium);
-  font-size: 10px;
+  font-size: 0.625rem;
 }
 
 .variable-filter input[type="checkbox"] {
@@ -258,22 +352,27 @@ button:disabled {
   color: var(--ink-medium);
   cursor: pointer;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 600;
 }
 
 .variable-row {
   display: grid;
   width: 100%;
-  padding: 7px 11px 7px 22px;
+  min-height: 0;
+  padding: 4px 11px 5px 20px;
   border: 0;
   border-radius: 0;
   text-align: left;
   background: transparent;
 }
 
+.variable-row[data-supporting] span {
+  color: var(--ink-medium);
+}
+
 .variable-row:hover {
-  background: #f2f2ee;
+  background: var(--ink-faint);
 }
 
 .variable-row[aria-selected="true"] {
@@ -289,8 +388,8 @@ button:disabled {
 
 .variable-row small {
   overflow: hidden;
-  margin-top: 2px;
-  color: var(--ink-weak);
+  margin-top: 1px;
+  color: var(--ink-quiet);
   font-family: var(--mono);
   font-size: 9px;
   text-overflow: ellipsis;
@@ -301,7 +400,8 @@ button:disabled {
   max-height: 120px;
   overflow: auto;
   border-top: 1px solid var(--line);
-  background: #fff9e8;
+  background: var(--warn-bg);
+  color: var(--warn-ink);
 }
 
 .warnings p {
@@ -314,14 +414,19 @@ button:disabled {
   grid-column: 2;
   grid-row: 2;
   display: grid;
-  grid-template-rows: var(--toolbar-height) minmax(0, 1fr) var(--timeline-height);
+  grid-template-rows: auto minmax(0, 1fr) var(--timeline-height);
   min-width: 0;
   min-height: 0;
+}
+
+.main[data-timeline="hidden"] {
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .toolbar {
   display: flex;
   min-width: 0;
+  min-height: var(--toolbar-height);
   align-items: stretch;
   border-bottom: 1px solid var(--line);
   background: var(--paper);
@@ -336,6 +441,7 @@ button:disabled {
 .view-tabs button {
   position: relative;
   min-width: 66px;
+  min-height: var(--toolbar-height);
   height: 100%;
   border: 0;
   border-radius: 0;
@@ -360,10 +466,38 @@ button:disabled {
 .display-controls {
   display: flex;
   min-width: 0;
-  overflow-x: auto;
+  flex: 1 1 0;
   align-items: center;
-  gap: 10px;
+  /* Wraps instead of scrolling: a control scrolled past the edge of a bar with
+     an overlay scrollbar is a control the reader cannot find. Costs a second
+     row only on windows too narrow to hold one. */
+  flex-wrap: wrap;
+  gap: 4px 0;
+  padding: 5px 0 5px 9px;
+}
+
+/* One group per thing being controlled — displayed axes, fixed indices,
+   colour, reference layer. Grouped by proximity rather than by rules: a rule
+   costs ink, and survives wrapping onto another row as a stray stub. */
+.control-group {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  margin-right: 22px;
+}
+
+.control-group:last-child {
+  margin-right: 0;
+}
+
+.toolbar-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
   padding: 5px 9px;
+  border-left: 1px solid var(--line);
 }
 
 .display-controls label {
@@ -413,7 +547,6 @@ button:disabled {
 .screenshot-button {
   flex: none;
   min-height: 28px;
-  margin-left: auto;
   font-size: 10px;
   font-weight: 650;
 }
@@ -426,11 +559,15 @@ button:disabled {
 }
 
 .figure {
-  --plot-title-size: clamp(14px, min(1.35cqi, 2.2cqb), 19px);
-  --plot-subtitle-size: clamp(10px, min(0.94cqi, 1.52cqb), 13px);
-  --plot-tick-size: clamp(10px, min(0.98cqi, 1.58cqb), 13.5px);
-  --plot-axis-size: clamp(11.5px, min(1.1cqi, 1.8cqb), 15.5px);
-  --plot-tooltip-size: clamp(11px, min(1.02cqi, 1.66cqb), 14.5px);
+  /* Fluid between a floor and a ceiling, both taken from the type ladder and
+     both in rem: the panel scales the figure with the window, and the reader's
+     own font size still moves the whole ladder. A px floor would pin the
+     smallest type on the page to a size the reader cannot change. */
+  --plot-title-size: clamp(var(--size-title), min(1.35cqi, 2.2cqb), calc(var(--size-title) * 1.35));
+  --plot-subtitle-size: clamp(var(--size-tick), min(0.94cqi, 1.52cqb), calc(var(--size-tick) * 1.35));
+  --plot-tick-size: clamp(var(--size-tick), min(0.98cqi, 1.58cqb), calc(var(--size-tick) * 1.35));
+  --plot-axis-size: clamp(var(--size-body), min(1.1cqi, 1.8cqb), calc(var(--size-body) * 1.35));
+  --plot-tooltip-size: clamp(var(--size-tick), min(1.02cqi, 1.66cqb), calc(var(--size-body) * 1.35));
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   width: 100%;
@@ -472,6 +609,146 @@ button:disabled {
   white-space: nowrap;
 }
 
+.comparison-figure {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.single-curve {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.comparison-controls {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  white-space: nowrap;
+}
+
+.series-control {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding-right: 7px;
+  border-right: 1px solid var(--line);
+  font-size: var(--size-tick);
+}
+
+.series-key {
+  width: 18px;
+  height: 4px;
+  flex: none;
+  overflow: visible;
+}
+
+.series-key line {
+  stroke-width: var(--stroke-data);
+}
+
+.series-control > span {
+  color: var(--ink-quiet);
+  font-family: var(--mono);
+}
+
+.series-control label {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--ink-medium);
+}
+
+.series-control input {
+  width: 62px;
+  padding: 0 4px;
+  font-family: var(--mono);
+}
+
+.series-control input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+.comparison-warning {
+  color: var(--warn-ink);
+  font-size: var(--size-tick);
+}
+
+.comparison-line {
+  stroke-width: var(--stroke-data);
+}
+
+.comparison-field-figure {
+  position: relative;
+}
+
+.field-comparison {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+}
+
+.field-comparison[data-count="1"] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.field-comparison[data-count="2"] {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.field-comparison-pane {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: 25px minmax(0, 1fr);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.field-comparison-pane > header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px;
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: var(--size-tick);
+}
+
+.field-comparison-pane > header span {
+  overflow: hidden;
+  color: var(--ink-quiet);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comparison-unavailable {
+  display: grid;
+  place-content: center;
+  color: var(--error-ink);
+}
+
+.field-limit {
+  position: absolute;
+  right: 10px;
+  bottom: 4px;
+  padding: 2px 5px;
+  background: var(--warn-bg);
+}
+
 .plot-frame {
   position: relative;
   min-width: 0;
@@ -502,14 +779,14 @@ button:disabled {
 
 .scalar-value small {
   margin-top: 5px;
-  color: var(--ink-weak);
+  color: var(--ink-quiet);
   font-family: var(--mono);
 }
 
 .field-canvas {
   position: absolute;
   display: block;
-  background: #eee;
+  background: var(--ink-faint);
   cursor: crosshair;
   image-rendering: auto;
   touch-action: none;
@@ -518,7 +795,7 @@ button:disabled {
 .mesh-canvas {
   position: absolute;
   display: block;
-  background: #eee;
+  background: var(--ink-faint);
   cursor: crosshair;
   touch-action: none;
 }
@@ -545,16 +822,6 @@ button:disabled {
   filter: grayscale(1) contrast(1.35) brightness(1.35);
 }
 
-.map-overlay small {
-  position: absolute;
-  right: 3px;
-  bottom: 2px;
-  padding: 1px 3px;
-  background: rgb(255 255 255 / 72%);
-  color: #333;
-  font: 8px/1.2 system-ui, sans-serif;
-  pointer-events: auto;
-}
 
 .map-overlay a {
   color: inherit;
@@ -563,36 +830,38 @@ button:disabled {
 .zoom-box {
   vector-effect: non-scaling-stroke;
   stroke: var(--ink);
-  stroke-width: 1;
+  stroke-width: var(--stroke-spine);
   stroke-dasharray: 4 3;
-  fill: rgb(255 255 255 / 18%);
+  fill: color-mix(in srgb, var(--paper) 18%, transparent);
 }
 
+/* Sits in the plot's top margin, not over the data: a control that hides the
+   thing it controls is worse than one more pixel of chrome. */
 .view-controls {
   position: absolute;
   z-index: 5;
-  top: 7px;
-  right: 48px;
+  top: 3px;
+  left: 4px;
   display: flex;
   gap: 2px;
 }
 
 .view-controls button {
-  min-width: 27px;
-  min-height: 27px;
-  padding: 0 7px;
-  background: rgb(255 255 255 / 90%);
-  font-size: 11px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0 6px;
+  background: var(--paper);
+  font-size: 0.625rem;
   font-weight: 650;
 }
 
 .mesh-location {
   position: absolute;
-  top: 8px;
-  left: 78px;
+  top: 6px;
+  left: 122px;
   padding: 3px 6px;
   border: 1px solid var(--line);
-  background: rgb(255 255 255 / 86%);
+  background: var(--raised);
   color: var(--ink-medium);
   font-family: var(--mono);
   font-size: 9px;
@@ -640,11 +909,21 @@ button:disabled {
 }
 
 .plot-axis path,
-.plot-axis line {
+.plot-axis line,
+.plot-axis rect {
   vector-effect: non-scaling-stroke;
   stroke: var(--ink);
-  stroke-width: 0.9;
+  stroke-width: var(--stroke-spine);
   fill: none;
+}
+
+/* Furniture never reaches data weight: gridlines are a reading aid, not a
+   feature, so they sit at the bottom of the stroke ladder while the curve is
+   drawn at --stroke-data. */
+.plot-axis .gridline {
+  stroke: var(--ink-weak);
+  stroke-width: var(--stroke-grid);
+  opacity: 0.55;
 }
 
 .plot-axis .axis-label {
@@ -657,52 +936,37 @@ button:disabled {
 .probe-mark circle {
   vector-effect: non-scaling-stroke;
   stroke: var(--ink);
-  stroke-width: 1.3;
-  fill: #fff;
+  stroke-width: var(--stroke-reference);
+  fill: var(--paper);
 }
 
-.colorbar {
-  position: absolute;
-  top: 22px;
-  right: 6px;
-  bottom: 62px;
-  display: grid;
-  grid-template-rows: auto minmax(30px, 1fr) auto auto;
-  width: 34px;
-  justify-items: center;
-  gap: 4px;
+/* The colourbar is drawn inside the plot SVG, in its own column beside the
+   data, so it shares the axes' tick style and cannot overlap the plot. Its
+   ramp comes from the same palette the pixels do — a CSS copy of the gradient
+   would drift the moment a colormap changed. */
+.colorbar-axis {
   font-family: var(--plot-face);
-  font-size: calc(var(--plot-tick-size) * 0.8);
-  pointer-events: none;
-  z-index: 3;
+  font-size: calc(var(--plot-tick-size) * 0.88);
+  fill: var(--ink-medium);
 }
 
-.colorbar i {
-  width: 11px;
-  height: 100%;
-  border: 1px solid color-mix(in srgb, var(--ink) 35%, transparent);
+.colorbar-axis line {
+  vector-effect: non-scaling-stroke;
+  stroke: var(--ink);
+  stroke-width: var(--stroke-spine);
 }
 
-.colorbar i[data-colormap="viridis"] {
-  background: linear-gradient(#fde725, #5ec962, #21918c, #3b528b, #440154);
+.colorbar-axis .colorbar-frame {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: var(--stroke-spine);
+  vector-effect: non-scaling-stroke;
 }
 
-.colorbar i[data-colormap="thermal"] {
-  background: linear-gradient(#fcf4ab, #ef833c, #bc3754, #51207e, #0c1446);
-}
-
-.colorbar i[data-colormap="balance"] {
-  background: linear-gradient(#8b2e2c, #d68368, #f5f4f0, #629ec4, #1f5184);
-}
-
-.colorbar i[data-colormap="grayscale"] {
-  background: linear-gradient(#f5f5f2, #181b1e);
-}
-
-.colorbar small {
-  color: var(--ink-weak);
-  font-size: 8px;
-  writing-mode: vertical-rl;
+.colorbar-axis .axis-label {
+  font-size: var(--plot-axis-size);
+  font-weight: 700;
+  fill: var(--ink);
 }
 
 .plot-tooltip {
@@ -715,13 +979,11 @@ button:disabled {
   padding: 9px 11px;
   border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
   border-radius: 2px;
-  background: rgb(255 255 255 / 88%);
-  box-shadow: 0 2px 10px rgb(0 0 0 / 8%);
+  background: var(--raised);
   font-family: var(--plot-face);
   font-size: var(--plot-tooltip-size);
   line-height: 1.2;
   pointer-events: none;
-  backdrop-filter: blur(2px);
 }
 
 .plot-tooltip span {
@@ -731,12 +993,12 @@ button:disabled {
 
 .plot-loading {
   position: absolute;
-  top: 8px;
+  top: 6px;
   right: 10px;
   z-index: 3;
   padding: 4px 7px;
   border: 1px solid var(--line);
-  background: rgb(255 255 255 / 82%);
+  background: var(--raised);
   color: var(--ink-medium);
   font-size: 10px;
 }
@@ -746,16 +1008,16 @@ button:disabled {
   inset: 45% auto auto 50%;
   max-width: min(520px, 80%);
   padding: 12px 14px;
-  border: 1px solid #a54545;
-  background: #fff5f3;
-  color: #7b2525;
+  border: 1px solid var(--error-line);
+  background: var(--error-bg);
+  color: var(--error-ink);
   transform: translate(-50%, -50%);
 }
 
 .curve-line {
   vector-effect: non-scaling-stroke;
-  stroke: #0072b2;
-  stroke-width: 2.1;
+  stroke: var(--ink);
+  stroke-width: var(--stroke-data);
   fill: none;
   stroke-linejoin: round;
   stroke-linecap: round;
@@ -764,20 +1026,20 @@ button:disabled {
 .hover-crosshair {
   vector-effect: non-scaling-stroke;
   stroke: var(--ink-medium);
-  stroke-width: 1;
+  stroke-width: var(--stroke-spine);
   stroke-dasharray: 3 3;
 }
 
 .hover-dot {
   vector-effect: non-scaling-stroke;
-  stroke: #fff;
+  stroke: var(--paper);
   stroke-width: 2.5;
-  fill: #0072b2;
+  fill: var(--ink);
 }
 
 .time-hour {
   font-size: calc(var(--plot-tick-size) * 0.92);
-  fill: #2d3339;
+  fill: var(--ink-medium);
 }
 
 .time-day,
@@ -835,7 +1097,7 @@ button:disabled {
 
 .metadata-summary dt {
   margin-bottom: 3px;
-  color: var(--ink-weak);
+  color: var(--ink-quiet);
   font-size: 9px;
   font-weight: 700;
   text-transform: uppercase;
@@ -878,7 +1140,7 @@ button:disabled {
 }
 
 .empty-note {
-  color: var(--ink-weak);
+  color: var(--ink-quiet);
 }
 
 .timeline {
@@ -889,11 +1151,6 @@ button:disabled {
   padding: 6px 10px;
   border-top: 1px solid var(--line);
   background: var(--panel);
-}
-
-.timeline.empty {
-  display: flex;
-  color: var(--ink-weak);
 }
 
 .playback {
@@ -1011,7 +1268,7 @@ button:disabled {
   min-width: 0;
   padding: 0 10px;
   border-top: 1px solid var(--line);
-  background: #f5f5f2;
+  background: var(--panel);
   color: var(--ink-medium);
   font-family: var(--mono);
   font-size: 9.5px;
@@ -1061,7 +1318,7 @@ button:disabled {
     left: 0;
     width: var(--sidebar-width);
     visibility: visible;
-    box-shadow: 8px 0 22px rgb(0 0 0 / 12%);
+    box-shadow: 8px 0 22px var(--shadow);
   }
 
   .main {
@@ -1078,5 +1335,48 @@ button:disabled {
 
   .statusbar span:last-child {
     display: none;
+  }
+}
+
+/* A finger is not a mouse. WCAG 2.2 SC 2.5.8 puts the floor at 24 CSS px, which
+   is what the pointer-fine layout already clears; a coarse pointer gets the 44
+   that a fingertip actually covers. Only the targets grow -- type, spacing and
+   stroke are the same style at any pointer. */
+@media (pointer: coarse) {
+  button,
+  select,
+  input[type="search"],
+  input[type="number"] {
+    min-height: 44px;
+  }
+
+  .view-controls button,
+  .playback button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .variable-row {
+    padding-top: 9px;
+    padding-bottom: 10px;
+  }
+}
+
+/* Windows High Contrast and forced-colours modes: hand the system its own
+   palette rather than fighting it, and keep the furniture visible by asking
+   for currentColor where a token would otherwise be overridden away. */
+@media (forced-colors: active) {
+  .plot-axis path,
+  .plot-axis line,
+  .plot-axis rect,
+  .colorbar-axis line,
+  .curve-line,
+  .probe-mark line,
+  .probe-mark circle {
+    stroke: CanvasText;
+  }
+
+  .view-tabs button.active::after {
+    background: Highlight;
   }
 }

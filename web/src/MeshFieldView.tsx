@@ -1,26 +1,29 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 
 import { LatestSliceLoader, fetchStaticSlice } from "./api";
-import { finiteRange, formatNumber, type ColorRange } from "./color";
-import { Colorbar, PlotAxes, ViewControls, type PlotBounds } from "./FieldView";
+import { finiteRange, formatNumber, type ColorRange,
+  type ColormapChoice,
+} from "./color";
+import { MARGIN } from "./FieldView";
+import { Colorbar, PlotAxes, ViewControls, type PlotBounds } from "./plot";
 import { MapOverlay } from "./MapOverlay";
 import {
   buildCurvilinearGeometry,
   buildUgridGeometry,
+  edgesToFaces,
   findMeshHit,
   type Bounds,
   type MeshGeometry,
   type MeshHit,
 } from "./mesh";
 import type {
-  Colormap,
   ColorScale,
   DataSlice,
   Metadata,
   Probe,
   Variable,
 } from "./model";
-import { attributeNumber, attributeNumbers, variableUnit } from "./model";
+import { attributeNumber, attributeNumbers, attributeText, displayUnit, quantityLabel, resolveVariableReference } from "./model";
 import {
   formatPosition,
   geographicCoordinateVariables,
@@ -39,21 +42,21 @@ import {
 } from "./view";
 import { createMeshRenderer, type MeshSurface } from "./webgl";
 
-const MARGIN = { top: 18, right: 30, bottom: 52, left: 68 };
-
 interface MeshFieldViewProps {
   metadata: Metadata;
   variable: Variable;
   display: DisplayDimensions;
   indices: Record<string, number>;
   settled: boolean;
-  colormap: Colormap;
+  colormap: ColormapChoice;
   scale: ColorScale;
   range: ColorRange;
   rangeLocked: boolean;
+  sharedRange?: boolean;
   mapSource: "none" | "osm";
   probe: Probe | undefined;
   initialView?: ViewBounds;
+  controlledView?: ViewBounds;
   onViewChange: (view: ViewBounds) => void;
   onProbe: (probe: Probe) => void;
   onRange: (range: ColorRange) => void;
@@ -74,6 +77,8 @@ interface MeshDrag {
   view: ViewBounds;
 }
 
+type FieldGeometry = MeshGeometry & { edgeFaces?: Int32Array };
+
 export function MeshFieldView(props: MeshFieldViewProps) {
   const [frame, size] = useElementSize<HTMLDivElement>();
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -81,7 +86,7 @@ export function MeshFieldView(props: MeshFieldViewProps) {
   const loader = useRef(new LatestSliceLoader());
   const drag = useRef<MeshDrag | undefined>(undefined);
   const [slice, setSlice] = useState<DataSlice>();
-  const [geometry, setGeometry] = useState<MeshGeometry>();
+  const [geometry, setGeometry] = useState<FieldGeometry>();
   const [view, setView] = useState<Bounds | undefined>(props.initialView);
   const [hover, setHover] = useState<PointerValue>();
   const [dragBox, setDragBox] = useState<ViewRectangle>();
@@ -93,6 +98,17 @@ export function MeshFieldView(props: MeshFieldViewProps) {
     setView(nextView);
     props.onViewChange(nextView);
   };
+  useEffect(() => {
+    if (props.controlledView) {
+      setView(geometry ? zoomBounds(props.controlledView, geometry.bounds, 1) : props.controlledView);
+    }
+  }, [
+    geometry,
+    props.controlledView?.minimumX,
+    props.controlledView?.maximumX,
+    props.controlledView?.minimumY,
+    props.controlledView?.maximumY,
+  ]);
   const attachCanvas = useCallback((node: HTMLCanvasElement | null) => {
     if (canvas.current === node) return;
     renderer.current?.destroy();
@@ -130,15 +146,19 @@ export function MeshFieldView(props: MeshFieldViewProps) {
     !acceptedLargeMesh;
   const spatialDimension = props.display.x ?? props.variable.dimensions.length - 1;
   const request = useMemo(
-    () => hint.kind === "ugrid2d"
-      ? ugridFieldRequest(props.variable, spatialDimension, props.indices)
-      : fieldRequest(
-          props.variable,
-          props.display,
-          props.indices,
-          { width: availablePlot.width, height: availablePlot.height },
-          props.settled,
-        ),
+    () => {
+      if (hint.kind === "ugrid2d") {
+        return ugridFieldRequest(props.variable, spatialDimension, props.indices);
+      }
+      const ratio = props.settled ? Math.min(2, window.devicePixelRatio || 1) : 1;
+      return fieldRequest(
+        props.variable,
+        props.display,
+        props.indices,
+        { width: availablePlot.width * ratio, height: availablePlot.height * ratio },
+        props.settled,
+      );
+    },
     [
       hint.kind,
       props.variable,
@@ -179,6 +199,7 @@ export function MeshFieldView(props: MeshFieldViewProps) {
     });
   }, [
     needsConfirmation,
+    request.dataset,
     request.path,
     request.selection,
     request.stride,
@@ -222,13 +243,20 @@ export function MeshFieldView(props: MeshFieldViewProps) {
     ? fitPlotToBounds(availablePlot, geometry.bounds)
     : availablePlot;
 
-  const automaticRange = useMemo(
-    () => slice?.values instanceof Float32Array
-      ? finiteRange(slice.values, props.colormap)
-      : { minimum: 0, maximum: 1 },
-    [slice, props.colormap],
+  const values = useMemo(
+    () => !(slice?.values instanceof Float32Array) ? undefined : geometry?.edgeFaces
+      ? edgesToFaces(slice.values, geometry.edgeFaces, faceCount)
+      : slice.values,
+    [slice, geometry, faceCount],
   );
-  const activeRange = props.rangeLocked ? props.range : automaticRange;
+
+  const automaticRange = useMemo(
+    () => values
+      ? finiteRange(values, props.colormap)
+      : { minimum: 0, maximum: 1 },
+    [values, props.colormap],
+  );
+  const activeRange = props.rangeLocked || props.sharedRange ? props.range : automaticRange;
   useEffect(() => {
     if (
       !props.rangeLocked &&
@@ -239,8 +267,8 @@ export function MeshFieldView(props: MeshFieldViewProps) {
   }, [automaticRange, props.range, props.rangeLocked, props.onRange]);
 
   useEffect(() => {
-    if (!rendererReady || !renderer.current || !geometry || !view || !(slice?.values instanceof Float32Array)) return;
-    renderer.current.draw(geometry, slice.values, {
+    if (!rendererReady || !renderer.current || !geometry || !view || !values) return;
+    renderer.current.draw(geometry, values, {
       colormap: props.colormap,
       scale: props.scale,
       range: activeRange,
@@ -249,7 +277,7 @@ export function MeshFieldView(props: MeshFieldViewProps) {
       height: plot.height,
     });
     canvas.current?.setAttribute("data-rendered", "true");
-  }, [rendererReady, geometry, slice, view, props.colormap, props.scale, activeRange, plot.width, plot.height]);
+  }, [rendererReady, geometry, values, view, props.colormap, props.scale, activeRange, plot.width, plot.height]);
 
   if (needsConfirmation) {
     const estimatedMegabytes = Math.ceil((faceCount * 3 * 16) / 1024 / 1024);
@@ -271,7 +299,7 @@ export function MeshFieldView(props: MeshFieldViewProps) {
     : undefined;
 
   const inspect = (event: PointerEvent<HTMLCanvasElement>): PointerValue | undefined => {
-    if (!geometry || !view || !(slice?.values instanceof Float32Array)) return undefined;
+    if (!geometry || !view || !values) return undefined;
     const bounds = event.currentTarget.getBoundingClientRect();
     const localX = Math.max(0, Math.min(bounds.width, event.clientX - bounds.left));
     const localY = Math.max(0, Math.min(bounds.height, event.clientY - bounds.top));
@@ -283,7 +311,7 @@ export function MeshFieldView(props: MeshFieldViewProps) {
       left: event.clientX - frame.current!.getBoundingClientRect().left,
       top: event.clientY - frame.current!.getBoundingClientRect().top,
       hit,
-      value: Number(slice.values[hit.scalarIndex]),
+      value: Number(values[hit.scalarIndex]),
     };
   };
 
@@ -303,11 +331,26 @@ export function MeshFieldView(props: MeshFieldViewProps) {
       return;
     }
     const inspected = inspect(event);
-    if (!inspected) return;
+    if (!inspected || !Number.isFinite(inspected.value)) return;
+    const probe = probeFromHit(
+      props.variable, props.display, props.indices, slice, inspected.hit, inspected.value,
+    );
+    if (geometry?.edgeFaces) {
+      const edgeIndices: number[] = [];
+      // ponytail: one O(edges) scan per click avoids a second mesh-sized adjacency cache.
+      for (let edge = 0; edge < geometry.edgeFaces.length / 2; edge += 1) {
+        if (geometry.edgeFaces[edge * 2] === inspected.hit.scalarIndex ||
+            geometry.edgeFaces[edge * 2 + 1] === inspected.hit.scalarIndex) edgeIndices.push(edge);
+      }
+      if (edgeIndices.length) probe.average = {
+        dimension: props.variable.dimensions[spatialDimension].path,
+        indices: edgeIndices,
+      };
+    }
     props.onProbe(probeAtPosition(
       props.metadata,
       props.variable,
-      probeFromHit(props.variable, props.display, props.indices, slice, inspected.hit, inspected.value),
+      probe,
     ));
   };
 
@@ -373,6 +416,14 @@ export function MeshFieldView(props: MeshFieldViewProps) {
           yDomain={view ? [view.minimumY, view.maximumY] : [0, 1]}
           xLabel={axis.x}
           yLabel={axis.y}
+          boxed
+        />
+        <Colorbar
+          plot={plot}
+          range={activeRange}
+          colormap={props.colormap}
+          scale={props.scale}
+          label={quantityLabel(props.variable)}
         />
         {probePosition && Number.isFinite(probePosition.x) && Number.isFinite(probePosition.y) && (
           <g className="probe-mark" transform={`translate(${probePosition.x} ${probePosition.y})`}>
@@ -391,7 +442,6 @@ export function MeshFieldView(props: MeshFieldViewProps) {
           />
         )}
       </svg>
-      <Colorbar range={activeRange} colormap={props.colormap} scale={props.scale} />
       {geometry && (
         <ViewControls
           onZoomIn={() => changeView(zoomBounds(view ?? geometry.bounds, geometry.bounds, 0.75))}
@@ -410,7 +460,7 @@ export function MeshFieldView(props: MeshFieldViewProps) {
           className="plot-tooltip"
           style={{ left: Math.min(size.width - 210, hover.left + 14), top: hover.top + 12 }}
         >
-          <strong>{formatNumber(hover.value)} {variableUnit(props.variable)}</strong>
+          <strong>{formatNumber(hover.value)} {displayUnit(props.variable)}</strong>
           <span>{formatPosition(
             props.metadata,
             props.variable,
@@ -433,7 +483,7 @@ async function buildGeometry(
   variable: Variable,
   display: DisplayDimensions,
   slice: DataSlice,
-): Promise<MeshGeometry> {
+): Promise<FieldGeometry> {
   const hint = variable.view_hint;
   if (hint.kind === "curvilinear") {
     const xVariable = requiredVariable(metadata, hint.x);
@@ -503,9 +553,56 @@ async function buildGeometry(
         ...attributeNumbers(connectivityVariable, "_FillValue"),
         ...attributeNumbers(connectivityVariable, "missing_value"),
       ],
-      hint.location,
+      hint.location === "node" ? "node" : "face",
     );
-    return addGeographicCoordinates(metadata, variable, xVariable, yVariable, xSlice, ySlice, geometry);
+    const projected = await addGeographicCoordinates(metadata, variable, xVariable, yVariable, xSlice, ySlice, geometry);
+    if (hint.location !== "edge") return projected;
+    const topology = requiredVariable(metadata, hint.mesh);
+    const reference = attributeText(topology, "edge_face_connectivity");
+    if (!reference) throw new Error("UGRID edge data requires edge_face_connectivity");
+    const edgeFacesVariable = requiredVariable(
+      metadata,
+      resolveVariableReference(topology.path, reference),
+    );
+    const edgeFaces = await fetchStaticSlice(edgeFacesVariable);
+    const edgeDimension = attributeText(topology, "edge_dimension");
+    const edgeAxis = edgeDimension
+      ? edgeFacesVariable.dimensions.findIndex((dimension) => dimension.name === edgeDimension)
+      : 0;
+    if (
+      !(edgeFaces.values instanceof Int32Array || edgeFaces.values instanceof Uint32Array) ||
+      edgeFaces.shape.length !== 2 ||
+      edgeAxis < 0 ||
+      edgeFaces.shape[edgeAxis] !== slice.values.length ||
+      edgeFaces.shape[1 - edgeAxis] !== 2
+    ) {
+      throw new Error("UGRID edge-face connectivity must be edge × 2");
+    }
+    const startIndex = attributeNumber(edgeFacesVariable, "start_index") ?? 0;
+    if (startIndex !== 0 && startIndex !== 1) throw new Error("UGRID start_index must be 0 or 1");
+    const padding = new Set([
+      ...attributeNumbers(edgeFacesVariable, "_FillValue"),
+      ...attributeNumbers(edgeFacesVariable, "missing_value"),
+    ]);
+    const normalized = new Int32Array(edgeFaces.values.length);
+    for (let index = 0; index < normalized.length; index += 1) {
+      const edge = index >> 1;
+      const side = index & 1;
+      const source = edgeAxis === 0 ? index : side * slice.values.length + edge;
+      const packed = Number(edgeFaces.values[source]);
+      const face = packed - startIndex;
+      if (padding.has(packed)) normalized[index] = -1;
+      else if (!Number.isSafeInteger(face) || face < 0 || face >= connectivitySlice.shape[0]) {
+        throw new Error(`UGRID edge refers to invalid face ${packed}`);
+      } else normalized[index] = face;
+      if (side === 1 && normalized[index] >= 0 && normalized[index] === normalized[index - 1]) {
+        throw new Error(`UGRID edge ${edge} refers to the same face twice`);
+      }
+    }
+    return {
+      ...projected,
+      edgeFaces: normalized,
+    };
   }
   throw new Error("variable is not a mesh field");
 }
@@ -519,7 +616,7 @@ function probeFromHit(
   value: number,
 ): Probe {
   const nextIndices = { ...indices };
-  if (variable.view_hint.kind === "ugrid2d") {
+  if (variable.view_hint.kind === "ugrid2d" && variable.view_hint.location !== "edge") {
     const dimension = variable.dimensions[display.x ?? variable.dimensions.length - 1];
     if (dimension) nextIndices[dimension.path] = hit.scalarIndex;
   } else if (display.x !== undefined && display.y !== undefined && slice.shape.length === 2) {
@@ -577,7 +674,7 @@ function meshAxisLabels(metadata: Metadata, variable: Variable): { x: string; y:
   if (hint.kind !== "curvilinear" && hint.kind !== "ugrid2d") return { x: "x", y: "y" };
   const x = requiredVariable(metadata, hint.x);
   const y = requiredVariable(metadata, hint.y);
-  return { x: `${x.name} (${variableUnit(x)})`, y: `${y.name} (${variableUnit(y)})` };
+  return { x: `${x.name} (${displayUnit(x)})`, y: `${y.name} (${displayUnit(y)})` };
 }
 
 function requiredVariable(metadata: Metadata, path: string): Variable {

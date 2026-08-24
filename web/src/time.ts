@@ -14,8 +14,48 @@ export interface TimeTickLabel {
   month?: string;
 }
 
+export interface DisplayTimeZone {
+  readonly label: string;
+  readonly offsetMinutes: number;
+}
+
+export const UTC_TIME_ZONE: DisplayTimeZone = Object.freeze({
+  label: "UTC",
+  offsetMinutes: 0,
+});
+
+const UTC_CALENDARS = new Set(["standard", "gregorian", "proleptic_gregorian"]);
+
+export function timeInZone(
+  time: TimeDescription | undefined,
+  zone: DisplayTimeZone,
+): TimeDescription | undefined {
+  if (!time) return undefined;
+  return {
+    ...time,
+    offsetMinutes: zone.offsetMinutes,
+    zoneLabel: zone.label,
+  };
+}
+
+export function parseDisplayTimeZone(value: string | null): DisplayTimeZone | undefined {
+  const match = /^([A-Za-z][A-Za-z0-9._+-]{0,15}),([+-]?\d{1,4})$/.exec(value ?? "");
+  if (!match) return undefined;
+  const offsetMinutes = Number(match[2]);
+  if (Math.abs(offsetMinutes) > 840 || (match[1] === "UTC" && offsetMinutes !== 0)) {
+    return undefined;
+  }
+  return offsetMinutes === 0 && match[1] === "UTC"
+    ? UTC_TIME_ZONE
+    : { label: match[1], offsetMinutes };
+}
+
 export function describeTime(variable: Variable | undefined): TimeDescription | undefined {
   if (!variable) return undefined;
+  const calendar = (attributeText(variable, "calendar") ?? "standard").trim().toLowerCase();
+  // Non-Gregorian model calendars do not identify real UTC instants. Treating
+  // them as JavaScript dates would silently align unrelated field frames.
+  if (!UTC_CALENDARS.has(calendar)) return undefined;
   const units = attributeText(variable, "units");
   if (!units) return undefined;
   const match = /^(seconds?|minutes?|hours?|days?) since (.+)$/i.exec(units.trim());
@@ -50,12 +90,7 @@ export function describeTime(variable: Variable | undefined): TimeDescription | 
     multiplierMs: multipliers[match[1].toLowerCase()],
     originMs,
     offsetMinutes,
-    zoneLabel:
-      offsetMinutes === 480
-        ? "HKT"
-        : offsetMinutes === 0
-          ? "UTC"
-          : `UTC${formatOffset(offsetMinutes)}`,
+    zoneLabel: offsetMinutes === 0 ? "UTC" : `UTC${formatOffset(offsetMinutes)}`,
   };
 }
 

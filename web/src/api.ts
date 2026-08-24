@@ -1,13 +1,61 @@
-import type { DataSlice, Metadata, SliceRequest, Variable } from "./model";
+import type {
+  DatasetSummary,
+  DataSlice,
+  Metadata,
+  SliceRequest,
+  Variable,
+} from "./model";
 
 const staticSliceCache = new Map<string, Promise<DataSlice>>();
+const metadataCache = new Map<string, Promise<Metadata>>();
+const apiRoot = new URL("api/", document.baseURI);
+const viewerGeneration = new URL(document.baseURI).searchParams.get("generation");
 
-export async function fetchMetadata(): Promise<Metadata> {
-  const response = await fetch("/api/meta", { cache: "no-store" });
+function apiUrl(path: string): URL {
+  const url = new URL(path, apiRoot);
+  if (viewerGeneration) url.searchParams.set("generation", viewerGeneration);
+  return url;
+}
+
+export async function fetchDatasets(): Promise<DatasetSummary[]> {
+  const response = await fetch(apiUrl("datasets"), { cache: "no-store" });
   if (!response.ok) {
     throw new Error(await errorMessage(response));
   }
-  return response.json() as Promise<Metadata>;
+  const body = (await response.json()) as { datasets?: DatasetSummary[] };
+  if (!Array.isArray(body.datasets) || body.datasets.length === 0) {
+    throw new Error("ncx returned no datasets");
+  }
+  return body.datasets;
+}
+
+export async function fetchMetadata(dataset?: string): Promise<Metadata> {
+  const key = dataset ?? "";
+  const cached = metadataCache.get(key);
+  if (cached) return cached;
+  const pending = loadMetadata(dataset).catch((error) => {
+    metadataCache.delete(key);
+    throw error;
+  });
+  metadataCache.set(key, pending);
+  return pending;
+}
+
+async function loadMetadata(dataset?: string): Promise<Metadata> {
+  const query = new URLSearchParams();
+  if (dataset) query.set("dataset", dataset);
+  const response = await fetch(apiUrl(`meta${query.size ? `?${query}` : ""}`), { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(await errorMessage(response));
+  }
+  const metadata = (await response.json()) as Metadata;
+  metadata.dataset_id ||= dataset ?? "dataset";
+  metadata.dataset_label ||= metadata.dataset_id;
+  metadata.variables = metadata.variables.map((variable) => ({
+    ...variable,
+    dataset_id: metadata.dataset_id,
+  }));
+  return metadata;
 }
 
 export async function fetchSlice(request: SliceRequest, signal?: AbortSignal): Promise<DataSlice> {
@@ -16,7 +64,8 @@ export async function fetchSlice(request: SliceRequest, signal?: AbortSignal): P
     selection: request.selection,
     stride: request.stride,
   });
-  const response = await fetch(`/api/data?${query}`, { cache: "no-store", signal });
+  if (request.dataset) query.set("dataset", request.dataset);
+  const response = await fetch(apiUrl(`data?${query}`), { cache: "no-store", signal });
   if (!response.ok) {
     throw new Error(await errorMessage(response));
   }
@@ -35,7 +84,12 @@ export async function fetchSlice(request: SliceRequest, signal?: AbortSignal): P
   }
 
   const buffer = await response.arrayBuffer();
-  const expectedBytes = shape.reduce((total, length) => total * length, 1) * 4;
+  const samples = shape.reduce((total, length) => {
+    if (total > Number.MAX_SAFE_INTEGER / length) throw new Error("Slice shape is too large");
+    return total * length;
+  }, 1);
+  if (samples > Number.MAX_SAFE_INTEGER / 4) throw new Error("Slice byte count is too large");
+  const expectedBytes = samples * 4;
   if (buffer.byteLength !== expectedBytes) {
     throw new Error(`Slice body is ${buffer.byteLength} bytes; expected ${expectedBytes}`);
   }
@@ -58,14 +112,19 @@ export function fetchCoordinate(variable: Variable): Promise<Float32Array> {
 }
 
 export function fetchStaticSlice(variable: Variable): Promise<DataSlice> {
-  let cached = staticSliceCache.get(variable.path);
+  const key = `${variable.dataset_id ?? ""}:${variable.path}`;
+  let cached = staticSliceCache.get(key);
   if (!cached) {
     cached = fetchSlice({
+      dataset: variable.dataset_id,
       path: variable.path,
       selection: variable.dimensions.map(() => ":").join(","),
       stride: variable.dimensions.map(() => "1").join(","),
     });
-    staticSliceCache.set(variable.path, cached);
+    staticSliceCache.set(key, cached);
+    void cached.catch(() => {
+      if (staticSliceCache.get(key) === cached) staticSliceCache.delete(key);
+    });
   }
   return cached;
 }

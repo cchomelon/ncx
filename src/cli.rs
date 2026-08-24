@@ -22,11 +22,14 @@ Usage:
   ncx open [OPTIONS] FILE
   ncx open [OPTIONS] SSH_DESTINATION:/absolute/path.nc
   ncx serve [OPTIONS] FILE
+  ncx serve [OPTIONS] --dataset ID=FILE [--dataset ID=FILE ...]
 
 Options:
   --port PORT                 Loopback port for `serve` (default: 0)
   --max-response-bytes BYTES  Maximum binary response (default: 1073741824)
   --ugrid-warn-faces FACES    UGRID confirmation threshold (default: 2000000)
+  --dataset ID=FILE           Add one named read-only dataset to `serve`
+  --exit-on-stdin-eof         Stop `serve` when its owner pipe closes
   -h, --help                  Show this help
 ";
 
@@ -37,10 +40,16 @@ enum ParsedCommand {
         limits: Limits,
     },
     Serve {
-        path: PathBuf,
+        sources: Vec<ServeSource>,
         port: u16,
         limits: Limits,
+        exit_on_stdin_eof: bool,
     },
+}
+
+struct ServeSource {
+    id: String,
+    path: PathBuf,
 }
 
 enum OpenTarget {
@@ -63,11 +72,16 @@ pub async fn run() -> NcxResult<()> {
             print!("{USAGE}");
             Ok(())
         }
-        ParsedCommand::Serve { path, port, limits } => {
-            serve_local(&path, port, limits, false).await
-        }
+        ParsedCommand::Serve {
+            sources,
+            port,
+            limits,
+            exit_on_stdin_eof,
+        } => serve_local(sources, port, limits, false, exit_on_stdin_eof).await,
         ParsedCommand::Open { target, limits } => match classify_target(&target)? {
-            OpenTarget::Local(path) => serve_local(&path, 0, limits, true).await,
+            OpenTarget::Local(path) => {
+                serve_local(single_source(path), 0, limits, true, false).await
+            }
             OpenTarget::Remote { destination, path } => {
                 open_remote(&destination, &path, limits).await
             }
@@ -88,6 +102,8 @@ fn parse_arguments(arguments: Vec<String>) -> NcxResult<ParsedCommand> {
 
     let mut limits = Limits::default();
     let mut port = 0;
+    let mut exit_on_stdin_eof = false;
+    let mut sources = Vec::new();
     let mut target = None;
     let mut index = 1;
     while index < arguments.len() {
@@ -106,6 +122,26 @@ fn parse_arguments(arguments: Vec<String>) -> NcxResult<ParsedCommand> {
             "--ugrid-warn-faces" => {
                 limits.ugrid_warn_faces =
                     parse_positive(&arguments, &mut index, "--ugrid-warn-faces")?;
+            }
+            "--exit-on-stdin-eof" => {
+                if command != "serve" {
+                    return Err("--exit-on-stdin-eof is only valid with `ncx serve`".to_owned());
+                }
+                exit_on_stdin_eof = true;
+            }
+            "--dataset" => {
+                if command != "serve" {
+                    return Err("--dataset is only valid with `ncx serve`".to_owned());
+                }
+                let value = parse_value(&arguments, &mut index, "--dataset")?;
+                let source = parse_dataset(value)?;
+                if sources
+                    .iter()
+                    .any(|current: &ServeSource| current.id == source.id)
+                {
+                    return Err(format!("duplicate dataset ID {:?}", source.id));
+                }
+                sources.push(source);
             }
             "--" => {
                 index += 1;
@@ -126,16 +162,55 @@ fn parse_arguments(arguments: Vec<String>) -> NcxResult<ParsedCommand> {
         index += 1;
     }
 
-    let target = target.ok_or_else(|| "missing NetCDF file".to_owned())?;
     if command == "open" {
+        if !sources.is_empty() {
+            return Err("--dataset is only valid with `ncx serve`".to_owned());
+        }
+        let target = target.ok_or_else(|| "missing NetCDF file".to_owned())?;
         Ok(ParsedCommand::Open { target, limits })
     } else {
+        if !sources.is_empty() && target.is_some() {
+            return Err("use either FILE or --dataset, not both".to_owned());
+        }
+        if sources.is_empty() {
+            sources = single_source(PathBuf::from(
+                target.ok_or_else(|| "missing NetCDF file or --dataset".to_owned())?,
+            ));
+        }
         Ok(ParsedCommand::Serve {
-            path: PathBuf::from(target),
+            sources,
             port,
             limits,
+            exit_on_stdin_eof,
         })
     }
+}
+
+fn single_source(path: PathBuf) -> Vec<ServeSource> {
+    vec![ServeSource {
+        id: "dataset".to_owned(),
+        path,
+    }]
+}
+
+fn parse_dataset(value: String) -> NcxResult<ServeSource> {
+    let (id, path) = value
+        .split_once('=')
+        .ok_or_else(|| "--dataset must be ID=FILE".to_owned())?;
+    let valid_id = (1..=64).contains(&id.len())
+        && id.bytes().enumerate().all(|(index, byte)| {
+            byte.is_ascii_alphanumeric() || (index > 0 && matches!(byte, b'.' | b'_' | b'-'))
+        });
+    if !valid_id {
+        return Err(format!("invalid dataset ID {id:?}"));
+    }
+    if path.is_empty() {
+        return Err("dataset file path is empty".to_owned());
+    }
+    Ok(ServeSource {
+        id: id.to_owned(),
+        path: PathBuf::from(path),
+    })
 }
 
 fn parse_value<T>(arguments: &[String], index: &mut usize, option: &str) -> NcxResult<T>
@@ -182,12 +257,29 @@ fn classify_target(target: &str) -> NcxResult<OpenTarget> {
     Ok(OpenTarget::Local(PathBuf::from(target)))
 }
 
-async fn serve_local(path: &Path, port: u16, limits: Limits, launch: bool) -> NcxResult<()> {
+async fn serve_local(
+    sources: Vec<ServeSource>,
+    port: u16,
+    limits: Limits,
+    launch: bool,
+    exit_on_stdin_eof: bool,
+) -> NcxResult<()> {
     let started = StdInstant::now();
-    let dataset = Dataset::open(path)?;
+    let mut datasets = Vec::with_capacity(sources.len());
+    let mut variable_count = 0;
+    for source in sources {
+        let dataset = Dataset::open(&source.path)?;
+        variable_count += dataset.metadata().variables.len();
+        datasets.push(server::ServedDataset {
+            id: source.id.clone(),
+            label: source.id,
+            dataset,
+        });
+    }
     eprintln!(
-        "ncx: opened {} variables in {} ms",
-        dataset.metadata().variables.len(),
+        "ncx: opened {} dataset(s), {} variables in {} ms",
+        datasets.len(),
+        variable_count,
         started.elapsed().as_millis()
     );
     let listener = TcpListener::bind(SocketAddrV4::new(Ipv4Addr::LOCALHOST, port))
@@ -199,15 +291,34 @@ async fn serve_local(path: &Path, port: u16, limits: Limits, launch: bool) -> Nc
     let url = format!("http://127.0.0.1:{}/", address.port());
 
     println!("NCX_READY=127.0.0.1:{}", address.port());
-    println!("{url}");
+    if !exit_on_stdin_eof {
+        println!("{url}");
+    }
     if launch && !launch_browser(&url) {
         eprintln!("ncx: could not open a browser; open {url} manually");
     }
 
-    server::serve(listener, dataset, limits, async {
+    server::serve(listener, datasets, limits, shutdown(exit_on_stdin_eof)).await
+}
+
+async fn shutdown(exit_on_stdin_eof: bool) {
+    if !exit_on_stdin_eof {
         let _ = signal::ctrl_c().await;
-    })
-    .await
+        return;
+    }
+    let mut input = tokio::io::stdin();
+    let mut byte = [0_u8; 1];
+    tokio::select! {
+        _ = signal::ctrl_c() => {}
+        _ = async {
+            loop {
+                match input.read(&mut byte).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+            }
+        } => {}
+    }
 }
 
 async fn open_remote(destination: &str, path: &str, limits: Limits) -> NcxResult<()> {
@@ -390,15 +501,43 @@ mod tests {
             "8765".into(),
             "--max-response-bytes".into(),
             "4096".into(),
+            "--exit-on-stdin-eof".into(),
             "fixture.nc".into(),
         ])
         .unwrap();
 
-        let ParsedCommand::Serve { port, limits, path } = command else {
+        let ParsedCommand::Serve {
+            port,
+            limits,
+            sources,
+            exit_on_stdin_eof,
+        } = command
+        else {
             panic!("expected serve");
         };
         assert_eq!(port, 8765);
         assert_eq!(limits.max_response_bytes, 4096);
-        assert_eq!(path, PathBuf::from("fixture.nc"));
+        assert_eq!(sources[0].id, "dataset");
+        assert_eq!(sources[0].path, PathBuf::from("fixture.nc"));
+        assert!(exit_on_stdin_eof);
+    }
+
+    #[test]
+    fn parses_repeated_named_datasets_without_a_cli_dependency() {
+        let command = parse_arguments(vec![
+            "serve".into(),
+            "--dataset".into(),
+            "case-a=/data/a.nc".into(),
+            "--dataset".into(),
+            "case-b=/data/b.nc".into(),
+        ])
+        .unwrap();
+
+        let ParsedCommand::Serve { sources, .. } = command else {
+            panic!("expected serve");
+        };
+        assert_eq!(sources.len(), 2);
+        assert_eq!(sources[0].id, "case-a");
+        assert_eq!(sources[1].path, PathBuf::from("/data/b.nc"));
     }
 }

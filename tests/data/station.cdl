@@ -1,0 +1,19 @@
+netcdf station {
+dimensions:
+    time = 4 ;
+variables:
+    float TPK(time) ;
+        TPK:long_name = "TPK water surface elevation relative to mean sea level" ;
+        TPK:standard_name = "sea_surface_height_above_mean_sea_level" ;
+        TPK:station_id = "TPK" ;
+        TPK:vertical_datum = "MSL" ;
+        TPK:units = "m" ;
+    float time(time) ;
+        time:standard_name = "time" ;
+        time:axis = "T" ;
+        time:units = "hours since 2025-09-20 09:00:00" ;
+        time:calendar = "gregorian" ;
+data:
+    TPK = 0.1, 0.2, 0.3, 0.4 ;
+    time = 0, 1, 2, 3 ;
+}

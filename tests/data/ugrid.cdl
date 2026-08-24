@@ -3,6 +3,8 @@ dimensions:
   time = 3 ;
   node = 6 ;
   face = 3 ;
+  nMesh2D_edge = 8 ;
+  Two = 2 ;
   max_face_nodes = 4 ;
 variables:
   float time(time) ;
@@ -14,6 +16,9 @@ variables:
     mesh:topology_dimension = 2 ;
     mesh:node_coordinates = "node_x node_y" ;
     mesh:face_node_connectivity = "face_nodes" ;
+    mesh:edge_node_connectivity = "edge_nodes" ;
+    mesh:edge_face_connectivity = "edge_faces" ;
+    mesh:edge_dimension = "nMesh2D_edge" ;
   float node_x(node) ;
     node_x:standard_name = "longitude" ;
     node_x:units = "degrees_east" ;
@@ -24,6 +29,13 @@ variables:
     face_nodes:cf_role = "face_node_connectivity" ;
     face_nodes:start_index = 1 ;
     face_nodes:_FillValue = -1 ;
+  int edge_nodes(nMesh2D_edge, Two) ;
+    edge_nodes:cf_role = "edge_node_connectivity" ;
+    edge_nodes:start_index = 1 ;
+  int edge_faces(Two, nMesh2D_edge) ;
+    edge_faces:cf_role = "edge_face_connectivity" ;
+    edge_faces:start_index = 1 ;
+    edge_faces:_FillValue = -1 ;
   float node_temperature(time, node) ;
     node_temperature:long_name = "UGRID node temperature" ;
     node_temperature:units = "degree_Celsius" ;
@@ -34,6 +46,11 @@ variables:
     face_depth:units = "m" ;
     face_depth:mesh = "mesh" ;
     face_depth:location = "face" ;
+  float edge_current(time, nMesh2D_edge) ;
+    edge_current:long_name = "UGRID edge current" ;
+    edge_current:units = "m s-1" ;
+    edge_current:mesh = "mesh" ;
+    edge_current:location = "edge" ;
 
 data:
   time = 0, 6, 12 ;
@@ -44,6 +61,10 @@ data:
     1, 2, 5, _,
     2, 3, 4, 5,
     1, 5, 6, _ ;
+  edge_nodes = 1, 2, 2, 5, 5, 1, 2, 3, 3, 4, 4, 5, 5, 6, 6, 1 ;
+  edge_faces =
+    1, 1, 1, 2, 2, 2, 3, 3,
+    _, 2, 3, _, _, _, _, _ ;
   node_temperature =
     20, 21, 22, 23, 22, 21,
     21, 22, 23, 24, 23, 22,
@@ -52,4 +73,8 @@ data:
     12, 35, 18,
     13, 36, 19,
     14, 37, 20 ;
+  edge_current =
+    1, 2, 3, 4, 5, 6, 7, 8,
+    2, 3, 4, 5, 6, 7, 8, 9,
+    3, 4, 5, 6, 7, 8, 9, 10 ;
 }
