@@ -52,7 +52,8 @@ what the web adds — type in rem rather than px, WCAG contrast floors, target
 sizes, and colour maps chosen from each variable's CF metadata. The UI is the
 light `plate` variant only, on purpose. Colour data is generated from the upstream tables with
 `node web/scripts/sync-colormaps.mjs`, so a field here and the same field in a
-paper are the same colour.
+paper are the same colour. The Colour selector also carries every uShow scheme
+under `ncview legacy`; those compatibility maps are never selected automatically.
 
 ## Build
 

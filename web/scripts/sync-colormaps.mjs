@@ -20,6 +20,8 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const SOURCE = resolve(here, "../../../Style/plotstyle/_scm.py");
 const TARGET = resolve(here, "../src/scm.ts");
+const LEGACY_SOURCE = resolve(here, "../../../lib/ushow/src/cmocean_colormaps.h");
+const LEGACY_TARGET = resolve(here, "../src/ncview_legacy.ts");
 
 /**
  * Maps carried into the browser. A deliberately short list: every entry is one
@@ -103,3 +105,121 @@ lines.push("};", "");
 writeFileSync(TARGET, lines.join("\n"));
 const bytes = readFileSync(TARGET).length;
 console.log(`wrote ${TARGET} (${(bytes / 1024).toFixed(1)} kB, ${WANTED.length} maps)`);
+
+const LEGACY_CLASSES = {
+  viridis: "sequential",
+  hot: "sequential",
+  grayscale: "sequential",
+  algae: "sequential",
+  amp: "sequential",
+  balance: "diverging",
+  curl: "diverging",
+  deep: "sequential",
+  delta: "diverging",
+  dense: "sequential",
+  diff: "diverging",
+  gray: "sequential",
+  haline: "sequential",
+  ice: "sequential",
+  matter: "sequential",
+  oxy: "sequential",
+  phase: "cyclic",
+  rain: "sequential",
+  solar: "sequential",
+  speed: "sequential",
+  tarn: "diverging",
+  tempo: "sequential",
+  thermal: "sequential",
+  topo: "multi-sequential",
+  turbid: "sequential",
+};
+
+const legacySource = readFileSync(LEGACY_SOURCE, "utf8");
+const cmoceanNames = [...legacySource.matchAll(/\{"([a-z]+)", cmocean_[a-z]+\}/g)]
+  .map((match) => match[1]);
+const legacyNames = ["viridis", "hot", "grayscale", ...cmoceanNames];
+
+function readCmoceanTable(name) {
+  const match = legacySource.match(new RegExp(
+    `static const unsigned char cmocean_${name}\\[256\\]\\[3\\] = \\{([\\s\\S]*?)\\n\\};`,
+  ));
+  if (!match) throw new Error(`${name} not found in ${LEGACY_SOURCE}`);
+  const entries = [...match[1].matchAll(/\{\s*(\d+),\s*(\d+),\s*(\d+)\s*\}/g)]
+    .map((entry) => entry.slice(1).map(Number));
+  if (entries.length !== 256) {
+    throw new Error(`${name} has ${entries.length} entries, expected 256`);
+  }
+  return entries;
+}
+
+const f32 = Math.fround;
+const add = (left, right) => f32(f32(left) + f32(right));
+const multiply = (left, right) => f32(f32(left) * f32(right));
+const byte = (value) => Math.trunc(multiply(Math.max(0, Math.min(1, value)), 255));
+
+function builtInTable(name) {
+  return Array.from({ length: 256 }, (_, index) => {
+    if (name === "grayscale") return [index, index, index];
+    const t = f32(index / 255);
+    if (name === "hot") {
+      if (t < f32(0.33333)) return [byte(multiply(t, 3)), 0, 0];
+      if (t < f32(0.66667)) {
+        return [255, byte(multiply(add(t, -0.33333), 3)), 0];
+      }
+      return [255, 255, byte(multiply(add(t, -0.66667), 3))];
+    }
+    if (name !== "viridis") throw new Error(`unknown built-in uShow map ${name}`);
+    const r = add(0.267004, multiply(t, add(0.282327, multiply(t, add(-0.605696, multiply(t, 1.049613))))));
+    const g = add(0.004874, multiply(t, add(1.421801, multiply(t, add(-0.759744, multiply(t, 0.239226))))));
+    const b = add(0.329415, multiply(t, add(0.266658, multiply(t, add(0.123926, multiply(t, -0.576063))))));
+    return [byte(r), byte(g), byte(b)];
+  });
+}
+
+const legacyTables = Object.fromEntries(legacyNames.map((name) => [
+  name,
+  ["viridis", "hot", "grayscale"].includes(name) ? builtInTable(name) : readCmoceanTable(name),
+]));
+const hex = (table) => table
+  .flat()
+  .map((value) => value.toString(16).padStart(2, "0").toUpperCase())
+  .join("");
+const legacyLines = [
+  "/**",
+  " * uShow/ncview legacy colour maps -- generated, do not hand-edit.",
+  " *",
+  " * Imported from `lib/ushow/src/colormaps.c` and its embedded cmocean",
+  " * tables. These maps are opt-in compatibility choices; ncx's metadata-driven",
+  " * defaults remain the Scientific colour maps in `scm.ts`.",
+  " *",
+  " * Regenerate with `node scripts/sync-colormaps.mjs`.",
+  " */",
+  "",
+  'import type { ScmClass } from "./scm.ts";',
+  "",
+  `export const NCVIEW_LEGACY_NAMES = ${JSON.stringify(legacyNames)} as const;`,
+  "export type NcviewLegacyName = typeof NCVIEW_LEGACY_NAMES[number];",
+  "",
+  "export const NCVIEW_LEGACY_CLASS = {",
+];
+for (const name of legacyNames) {
+  const kind = LEGACY_CLASSES[name];
+  if (!kind) throw new Error(`no class for legacy map ${name}`);
+  legacyLines.push(`  ${name}: "${kind}",`);
+}
+legacyLines.push("} as const satisfies Record<NcviewLegacyName, ScmClass>;", "");
+legacyLines.push("/** name -> 256 packed RRGGBB entries, low value first. */");
+legacyLines.push("export const NCVIEW_LEGACY: Record<NcviewLegacyName, string> = {");
+for (const name of legacyNames) {
+  const table = hex(legacyTables[name]);
+  legacyLines.push(`  ${name}:`);
+  for (let index = 0; index < table.length; index += 96) {
+    const chunk = table.slice(index, index + 96);
+    legacyLines.push(`    "${chunk}"${index + 96 >= table.length ? "," : " +"}`);
+  }
+}
+legacyLines.push("};", "");
+
+writeFileSync(LEGACY_TARGET, legacyLines.join("\n"));
+const legacyBytes = readFileSync(LEGACY_TARGET).length;
+console.log(`wrote ${LEGACY_TARGET} (${(legacyBytes / 1024).toFixed(1)} kB, ${legacyNames.length} maps)`);

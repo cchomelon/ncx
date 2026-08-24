@@ -4,11 +4,26 @@ import test from "node:test";
 import {
   colorForValue,
   colormapClass,
+  COLORMAP_GROUPS,
   defaultColormap,
   finiteRange,
   needsSymmetricRange,
   paletteBytes,
 } from "./color.ts";
+
+const USHOW_COLORMAPS = [
+  "viridis", "hot", "grayscale",
+  "algae", "amp", "balance", "curl", "deep", "delta", "dense", "diff", "gray", "haline",
+  "ice", "matter", "oxy", "phase", "rain", "solar", "speed", "tarn", "tempo", "thermal",
+  "topo", "turbid",
+];
+
+test("offers every uShow scheme in the ncview legacy group", () => {
+  const group = COLORMAP_GROUPS.find((candidate) => candidate.label === "ncview legacy");
+  assert.ok(group);
+  assert.deepEqual(group.options.map((option) => option.value), USHOW_COLORMAPS);
+  for (const option of group.options) assert.equal(paletteBytes(option.value).length, 256 * 4);
+});
 
 test("keeps missing values out of every colour scale", () => {
   const values = Float32Array.of(Number.NaN, -2, 4);

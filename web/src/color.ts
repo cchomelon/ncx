@@ -5,22 +5,29 @@
  * Two rules carry everything here, both from `Style/Philosophy.md` §4:
  *
  *  1. **Hue is not ordered.** A reader cannot say that red is more than green,
- *    so a colour map has to carry order in *lightness*. Every map below is one
- *    of Crameri's Scientific colour maps: perceptually uniform, monotonic in
- *    lightness where it claims to be sequential, colour-vision-deficiency
- *    friendly, and readable in greyscale.
+ *    so a colour map has to carry order in *lightness*. Metadata-driven
+ *    defaults use Crameri's Scientific colour maps. The ncview legacy group is
+ *    available only when a reader explicitly needs compatibility.
  *  2. **Choosing a map is a claim about the data**, not a preference. A
  *    diverging map on one-sided data invents a midpoint; a sequential map on an
  *    anomaly hides the sign; a diverging map with asymmetric limits moves zero.
  *    So the viewer picks the map from the variable's CF metadata
  *    (`defaultColormap`) and only then lets the reader override it.
  */
-import { SCM, SCM_CLASS, type ScmClass, type ScmName } from "./scm.ts";
+import {
+  NCVIEW_LEGACY,
+  NCVIEW_LEGACY_CLASS,
+  NCVIEW_LEGACY_NAMES,
+} from "./ncview_legacy.ts";
+import { SCM, SCM_CLASS, type ScmClass } from "./scm.ts";
 import type { ColorScale } from "./model.ts";
 
 type Rgb = readonly [number, number, number];
 
-export type Colormap = ScmName;
+const COLORMAPS = { ...SCM, ...NCVIEW_LEGACY };
+const COLORMAP_CLASSES = { ...SCM_CLASS, ...NCVIEW_LEGACY_CLASS };
+
+export type Colormap = keyof typeof COLORMAPS;
 
 /** Reversed maps get a `_r` suffix, exactly as in the Python style. */
 export type ColormapChoice = Colormap | `${Colormap}_r`;
@@ -64,10 +71,14 @@ export const COLORMAP_GROUPS: ReadonlyArray<{
     label: "Cyclic — an angle",
     options: [{ value: "romaO", label: "romaO — phase, direction" }],
   },
+  {
+    label: "ncview legacy",
+    options: NCVIEW_LEGACY_NAMES.map((value) => ({ value, label: value })),
+  },
 ];
 
 export function colormapClass(choice: ColormapChoice): ScmClass {
-  return SCM_CLASS[baseName(choice)];
+  return COLORMAP_CLASSES[baseName(choice)];
 }
 
 /**
@@ -94,7 +105,7 @@ const decoded = new Map<Colormap, Uint8Array>();
 function table(name: Colormap): Uint8Array {
   let bytes = decoded.get(name);
   if (bytes) return bytes;
-  const packed = SCM[name];
+  const packed = COLORMAPS[name];
   bytes = new Uint8Array(256 * 3);
   for (let index = 0; index < 256; index += 1) {
     const offset = index * 6;

@@ -576,6 +576,11 @@ button:disabled {
   width: 82px;
 }
 
+.display-controls .range-values input[readonly] {
+  background: var(--panel);
+  color: var(--ink-medium);
+}
+
 .dimension-readout output {
   color: var(--ink);
   font-family: var(--mono);

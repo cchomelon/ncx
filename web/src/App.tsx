@@ -527,6 +527,16 @@ export function App() {
                   <select
                     value={colormap}
                     onChange={(event) => setColormap(event.target.value as ColormapChoice)}
+                    onWheel={(event) => {
+                      const current = event.currentTarget.selectedIndex;
+                      const next = Math.max(0, Math.min(
+                        event.currentTarget.options.length - 1,
+                        current + Math.sign(event.deltaY),
+                      ));
+                      if (next === current) return;
+                      event.preventDefault();
+                      setColormap(event.currentTarget.options[next].value as ColormapChoice);
+                    }}
                   >
                     {COLORMAP_GROUPS.map((group) => (
                       <optgroup key={group.label} label={group.label}>
@@ -547,46 +557,42 @@ export function App() {
                     <option value="symlog">symlog</option>
                   </select>
                 </label>
-                {variable.dimensions.length >= 2 && (
-                  <>
-                    <label>
-                      Range
-                      <select
-                        value={rangeLocked ? "locked" : "auto"}
-                        onChange={(event) => setRangeLocked(event.target.value === "locked")}
-                      >
-                        <option value="auto">auto</option>
-                        <option value="locked">locked</option>
-                      </select>
-                    </label>
-                    {rangeLocked && (
-                      <label className="range-values">
-                        Min
-                        <input
-                          aria-label="Colour range minimum"
-                          type="number"
-                          step="any"
-                          value={colorRange.minimum}
-                          onChange={(event) => setColorRange((current) => ({
-                            ...current,
-                            minimum: Math.min(Number(event.target.value), current.maximum - Number.EPSILON),
-                          }))}
-                        />
-                        Max
-                        <input
-                          aria-label="Colour range maximum"
-                          type="number"
-                          step="any"
-                          value={colorRange.maximum}
-                          onChange={(event) => setColorRange((current) => ({
-                            ...current,
-                            maximum: Math.max(Number(event.target.value), current.minimum + Number.EPSILON),
-                          }))}
-                        />
-                      </label>
-                    )}
-                  </>
-                )}
+                <label>
+                  Range
+                  <select
+                    value={rangeLocked ? "locked" : "auto"}
+                    onChange={(event) => setRangeLocked(event.target.value === "locked")}
+                  >
+                    <option value="auto">auto</option>
+                    <option value="locked">locked</option>
+                  </select>
+                </label>
+                <label className="range-values">
+                  Min
+                  <input
+                    aria-label="Colour range minimum"
+                    type="number"
+                    step="any"
+                    readOnly={!rangeLocked}
+                    value={colorRange.minimum}
+                    onChange={(event) => setColorRange((current) => ({
+                      ...current,
+                      minimum: Math.min(Number(event.target.value), current.maximum - Number.EPSILON),
+                    }))}
+                  />
+                  Max
+                  <input
+                    aria-label="Colour range maximum"
+                    type="number"
+                    step="any"
+                    readOnly={!rangeLocked}
+                    value={colorRange.maximum}
+                    onChange={(event) => setColorRange((current) => ({
+                      ...current,
+                      maximum: Math.max(Number(event.target.value), current.minimum + Number.EPSILON),
+                    }))}
+                  />
+                </label>
               </div>
             )}
             {(view === "field" || (view === "compare" && variable.dimensions.length >= 2)) && geographicField && (

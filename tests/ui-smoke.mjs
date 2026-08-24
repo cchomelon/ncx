@@ -77,6 +77,22 @@ const failures = [];
 try {
   window.__ncxStep = "initial field";
   const shell = await waitFor(() => document.querySelector(".shell"), "application shell did not mount");
+  if (browserMode !== "station") {
+    const legacy = await waitFor(
+      () => document.querySelector('optgroup[label="ncview legacy"]'),
+      "ncview legacy colour group did not render",
+    );
+    if (legacy.querySelectorAll("option").length !== 25) {
+      failures.push("ncview legacy colour group does not contain all 25 uShow schemes");
+    }
+    const colour = legacy.closest("select");
+    if (colour?.size > 1) failures.push("Colour control is expanded instead of collapsed");
+    const originalColour = colour?.value;
+    colour?.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 100 }));
+    await waitFor(() => colour?.value !== originalColour, "hover-scrolling Colour did not select the next map");
+    colour?.dispatchEvent(new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: -100 }));
+    await waitFor(() => colour?.value === originalColour, "reverse hover-scroll did not restore Colour");
+  }
   if (browserMode === "station") {
     const controls = await waitFor(() => {
       const items = [...document.querySelectorAll(".single-curve .series-control")];
@@ -409,9 +425,16 @@ try {
   window.__ncxStep = "range controls";
   const rangeSelect = [...document.querySelectorAll(".display-controls label")]
     .find((label) => label.textContent.trim().startsWith("Range"))?.querySelector("select");
+  if (!document.querySelector('input[aria-label="Colour range minimum"]') ||
+      !document.querySelector('input[aria-label="Colour range maximum"]')) {
+    failures.push("automatic colour range values are not exposed");
+  }
   rangeSelect.value = "locked";
   rangeSelect.dispatchEvent(new Event("change", { bubbles: true }));
-  const minimum = await waitFor(() => document.querySelector('input[aria-label="Colour range minimum"]'), "locked range controls did not appear");
+  const minimum = await waitFor(() => {
+    const input = document.querySelector('input[aria-label="Colour range minimum"]');
+    return input && !input.readOnly ? input : null;
+  }, "locked range controls did not enable");
   const noStyleFetch = window.__ncxFetches.length;
   minimum.value = "300";
   minimum.dispatchEvent(new Event("input", { bubbles: true }));
