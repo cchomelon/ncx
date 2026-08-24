@@ -1,4 +1,5 @@
 use std::env;
+use std::ffi::OsStr;
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener as StdTcpListener};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -19,9 +20,9 @@ const USAGE: &str = "\
 ncx — a thin, remote-first NetCDF viewer
 
 Usage:
-  ncx open [OPTIONS] FILE
-  ncx open [OPTIONS] SSH_DESTINATION:/absolute/path.nc
-  ncx serve [OPTIONS] FILE
+  ncx open [OPTIONS] FILE_OR_DIRECTORY
+  ncx open [OPTIONS] SSH_DESTINATION:/absolute/path
+  ncx serve [OPTIONS] FILE_OR_DIRECTORY
   ncx serve [OPTIONS] --dataset ID=FILE [--dataset ID=FILE ...]
 
 Options:
@@ -49,7 +50,9 @@ enum ParsedCommand {
 
 struct ServeSource {
     id: String,
+    label: String,
     path: PathBuf,
+    expand_directory: bool,
 }
 
 enum OpenTarget {
@@ -189,7 +192,9 @@ fn parse_arguments(arguments: Vec<String>) -> NcxResult<ParsedCommand> {
 fn single_source(path: PathBuf) -> Vec<ServeSource> {
     vec![ServeSource {
         id: "dataset".to_owned(),
+        label: "dataset".to_owned(),
         path,
+        expand_directory: true,
     }]
 }
 
@@ -209,8 +214,59 @@ fn parse_dataset(value: String) -> NcxResult<ServeSource> {
     }
     Ok(ServeSource {
         id: id.to_owned(),
+        label: id.to_owned(),
         path: PathBuf::from(path),
+        expand_directory: false,
     })
+}
+
+fn expand_sources(mut sources: Vec<ServeSource>) -> NcxResult<(Vec<ServeSource>, bool)> {
+    if sources.len() != 1 || !sources[0].expand_directory || !sources[0].path.is_dir() {
+        return Ok((sources, false));
+    }
+
+    let directory = sources.pop().unwrap().path;
+    let mut paths = Vec::new();
+    for entry in std::fs::read_dir(&directory)
+        .map_err(|error| format!("cannot read {}: {error}", directory.display()))?
+    {
+        let entry = entry.map_err(|error| {
+            format!(
+                "cannot inspect an entry in {}: {error}",
+                directory.display()
+            )
+        })?;
+        let file_type = entry
+            .file_type()
+            .map_err(|error| format!("cannot inspect {}: {error}", entry.path().display()))?;
+        let path = entry.path();
+        if file_type.is_file() && path.extension() == Some(OsStr::new("nc")) {
+            paths.push(path);
+        }
+    }
+    paths.sort_by(|first, second| first.file_name().cmp(&second.file_name()));
+    if paths.is_empty() {
+        return Err(format!(
+            "{} contains no direct regular .nc files",
+            directory.display()
+        ));
+    }
+
+    let sources = paths
+        .into_iter()
+        .enumerate()
+        .map(|(index, path)| ServeSource {
+            id: format!("file-{:04}", index + 1),
+            label: path
+                .file_name()
+                .unwrap_or(path.as_os_str())
+                .to_string_lossy()
+                .into_owned(),
+            path,
+            expand_directory: false,
+        })
+        .collect();
+    Ok((sources, true))
 }
 
 fn parse_value<T>(arguments: &[String], index: &mut usize, option: &str) -> NcxResult<T>
@@ -265,14 +321,15 @@ async fn serve_local(
     exit_on_stdin_eof: bool,
 ) -> NcxResult<()> {
     let started = StdInstant::now();
+    let (sources, collection) = expand_sources(sources)?;
     let mut datasets = Vec::with_capacity(sources.len());
     let mut variable_count = 0;
     for source in sources {
         let dataset = Dataset::open(&source.path)?;
         variable_count += dataset.metadata().variables.len();
         datasets.push(server::ServedDataset {
-            id: source.id.clone(),
-            label: source.id,
+            id: source.id,
+            label: source.label,
             dataset,
         });
     }
@@ -298,7 +355,14 @@ async fn serve_local(
         eprintln!("ncx: could not open a browser; open {url} manually");
     }
 
-    server::serve(listener, datasets, limits, shutdown(exit_on_stdin_eof)).await
+    server::serve(
+        listener,
+        datasets,
+        limits,
+        collection,
+        shutdown(exit_on_stdin_eof),
+    )
+    .await
 }
 
 async fn shutdown(exit_on_stdin_eof: bool) {
@@ -402,7 +466,7 @@ async fn wait_until_ready(child: &mut Child, port: u16) -> NcxResult<()> {
         {
             return Err(format!("ssh exited before ncx was ready ({status})"));
         }
-        if metadata_is_ready(port).await {
+        if server_is_ready(port).await {
             return Ok(());
         }
         if Instant::now() >= deadline {
@@ -412,11 +476,13 @@ async fn wait_until_ready(child: &mut Child, port: u16) -> NcxResult<()> {
     }
 }
 
-async fn metadata_is_ready(port: u16) -> bool {
+async fn server_is_ready(port: u16) -> bool {
     let check = async {
         let mut stream = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).await.ok()?;
         stream
-            .write_all(b"GET /api/meta HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
+            .write_all(
+                b"GET /api/datasets HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
+            )
             .await
             .ok()?;
         let mut response = [0_u8; 64];
@@ -479,6 +545,40 @@ fn launch_browser(url: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn directory_source_is_flat_sorted_and_excludes_symlinks() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!("ncx-collection-{unique}"));
+        std::fs::create_dir_all(directory.join("nested")).unwrap();
+        std::fs::write(directory.join("b.nc"), []).unwrap();
+        std::fs::write(directory.join("a.nc"), []).unwrap();
+        std::fs::write(directory.join("notes.txt"), []).unwrap();
+        std::fs::write(directory.join("nested/hidden.nc"), []).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(directory.join("a.nc"), directory.join("linked.nc")).unwrap();
+
+        let (sources, collection) = expand_sources(single_source(directory.clone())).unwrap();
+
+        assert!(collection);
+        assert_eq!(
+            sources
+                .iter()
+                .map(|source| source
+                    .path
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned())
+                .collect::<Vec<_>>(),
+            ["a.nc", "b.nc"],
+        );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn parses_remote_targets_and_quotes_paths_as_data() {

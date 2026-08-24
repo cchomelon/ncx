@@ -25,12 +25,12 @@ import type {
 } from "./model";
 import {
   attributeText,
-  coordinateVariablePaths,
   defaultVariable,
   displayUnit,
   isNumeric,
-  meshGeometryPaths,
+  isTimeCoordinate,
   resolveVariableReference,
+  supportingVariablePaths,
   variableLabel,
 } from "./model";
 import { formatProbePosition } from "./projection";
@@ -65,6 +65,7 @@ export function App() {
     : [UTC_TIME_ZONE];
   const [metadata, setMetadata] = useState<Metadata>();
   const [datasets, setDatasets] = useState<DatasetSummary[]>([]);
+  const [collection, setCollection] = useState(false);
   const [selectedDataset, setSelectedDataset] = useState("");
   const [startupError, setStartupError] = useState<string>();
   const [selectedPath, setSelectedPath] = useState("");
@@ -90,11 +91,13 @@ export function App() {
     displayTimeZones[0],
   );
   const fieldViews = useRef(new Map<string, ViewBounds>());
+  const requestedVariable = useRef<{ dataset: string; path: string } | undefined>(undefined);
 
   useEffect(() => {
     fetchDatasets()
-      .then((nextDatasets) => {
+      .then(({ datasets: nextDatasets, collection: nextCollection }) => {
         setDatasets(nextDatasets);
+        setCollection(nextCollection);
         setSelectedDataset(nextDatasets[0].id);
       })
       .catch((error: unknown) => {
@@ -112,8 +115,14 @@ export function App() {
       .then((nextMetadata) => {
         if (!active) return;
         setMetadata(nextMetadata);
-        const initial = defaultVariable(nextMetadata);
-        setSelectedPath(initial?.path ?? "");
+        const requested = requestedVariable.current?.dataset === selectedDataset
+          ? requestedVariable.current.path
+          : undefined;
+        requestedVariable.current = undefined;
+        const initial = requested && nextMetadata.variables.some((candidate) => candidate.path === requested)
+          ? requested
+          : defaultVariable(nextMetadata)?.path ?? "";
+        setSelectedPath(initial);
         setStatus(`${nextMetadata.variables.length} variables · metadata ready`);
       })
       .catch((error: unknown) => {
@@ -204,8 +213,7 @@ export function App() {
       metadata?.variables.some(
         (candidate) =>
           candidate.path === path &&
-          (attributeText(candidate, "axis")?.toUpperCase() === "T" ||
-            attributeText(candidate, "standard_name") === "time"),
+          isTimeCoordinate(candidate),
       ) ?? false,
     [metadata],
   );
@@ -216,8 +224,7 @@ export function App() {
   const hasTimeAxis = metadata?.variables.some(
     (candidate) =>
       describeTime(candidate) !== undefined &&
-      (attributeText(candidate, "axis")?.toUpperCase() === "T" ||
-        attributeText(candidate, "standard_name") === "time"),
+      isTimeCoordinate(candidate),
   );
   const canCompare = comparisonAvailable(
     variable?.dimensions.length ?? 0,
@@ -339,7 +346,7 @@ export function App() {
           ☰
         </button>
         <strong className="brand">ncx</strong>
-        {datasets.length > 1 && (
+        {datasets.length > 1 && !collection && (
           <label className="dataset-switcher">
             Dataset
             <select value={selectedDataset} onChange={(event) => setSelectedDataset(event.target.value)}>
@@ -353,16 +360,36 @@ export function App() {
         <span className="read-only">READ ONLY</span>
       </header>
 
-      <DatasetBrowser
-        metadata={metadata}
-        selectedPath={selectedPath}
-        search={search}
-        onSearch={setSearch}
-        onSelect={(path) => {
-          setSelectedPath(path);
-          setSidebarOpen(window.innerWidth > 760);
-        }}
-      />
+      {collection ? (
+        <CollectionBrowser
+          datasets={datasets}
+          metadata={metadata}
+          selectedDataset={selectedDataset}
+          selectedPath={selectedPath}
+          search={search}
+          onSearch={setSearch}
+          onSelect={(dataset, path) => {
+            if (dataset === selectedDataset) {
+              setSelectedPath(path);
+            } else {
+              requestedVariable.current = { dataset, path };
+              setSelectedDataset(dataset);
+            }
+            setSidebarOpen(window.innerWidth > 760);
+          }}
+        />
+      ) : (
+        <DatasetBrowser
+          metadata={metadata}
+          selectedPath={selectedPath}
+          search={search}
+          onSearch={setSearch}
+          onSelect={(path) => {
+            setSelectedPath(path);
+            setSidebarOpen(window.innerWidth > 760);
+          }}
+        />
+      )}
 
       <main className="main" data-timeline={timeline ? "shown" : "hidden"}>
         <div className="toolbar">
@@ -723,14 +750,8 @@ function DatasetBrowser({
 }) {
   const [showSupporting, setShowSupporting] = useState(false);
   const query = search.trim().toLowerCase();
-  // Coordinates and mesh geometry describe the data rather than being it, so
-  // they are folded away by default: on a real file they are most of the list.
-  const supportingPaths = useMemo(() => {
-    const paths = new Set([...coordinateVariablePaths(metadata), ...meshGeometryPaths(metadata)]);
-    paths.delete(selectedPath);
-    return paths;
-  }, [metadata, selectedPath]);
-  const visibleCount = metadata.variables.length - (showSupporting ? 0 : supportingPaths.size);
+  const supportingPaths = useMemo(() => supportingVariablePaths(metadata), [metadata]);
+  const visibleCount = countVisible(metadata, supportingPaths, showSupporting, selectedPath);
   return (
     <aside className="sidebar">
       <div className="dataset-head">
@@ -756,44 +777,221 @@ function DatasetBrowser({
           </label>
         )}
       </div>
-      <div className="tree" role="tree">
-        {metadata.groups.map((group) => {
-          const variables = metadata.variables.filter((variable) => {
-            const parent = variable.path.slice(0, variable.path.lastIndexOf("/")) || "/";
-            return (
-              parent === group.path &&
-              (showSupporting || !supportingPaths.has(variable.path)) &&
-              (!query || variable.path.toLowerCase().includes(query))
-            );
-          });
-          if (!variables.length) return null;
+      <div className="tree">
+        <VariableGroups
+          metadata={metadata}
+          supportingPaths={supportingPaths}
+          showSupporting={showSupporting}
+          query={query}
+          selectedPath={selectedPath}
+          onSelect={onSelect}
+        />
+      </div>
+      <MetadataWarnings metadata={metadata} />
+    </aside>
+  );
+}
+
+type LoadedCollectionFile = {
+  metadata: Metadata;
+  supportingPaths: Set<string>;
+};
+
+function CollectionBrowser({
+  datasets,
+  metadata,
+  selectedDataset,
+  selectedPath,
+  search,
+  onSearch,
+  onSelect,
+}: {
+  datasets: DatasetSummary[];
+  metadata: Metadata;
+  selectedDataset: string;
+  selectedPath: string;
+  search: string;
+  onSearch: (value: string) => void;
+  onSelect: (dataset: string, path: string) => void;
+}) {
+  const [showSupporting, setShowSupporting] = useState(false);
+  const [loaded, setLoaded] = useState<Map<string, LoadedCollectionFile>>(new Map());
+  const [loading, setLoading] = useState<Set<string>>(new Set());
+  const [errors, setErrors] = useState<Map<string, string>>(new Map());
+  const query = search.trim().toLowerCase();
+
+  useEffect(() => {
+    const id = metadata.dataset_id || selectedDataset;
+    setLoaded((current) => {
+      if (current.get(id)?.metadata === metadata) return current;
+      const next = new Map(current);
+      next.set(id, { metadata, supportingPaths: supportingVariablePaths(metadata) });
+      return next;
+    });
+  }, [metadata, selectedDataset]);
+
+  const load = (dataset: string) => {
+    if (loaded.has(dataset) || loading.has(dataset)) return;
+    setLoading((current) => new Set(current).add(dataset));
+    void fetchMetadata(dataset)
+      .then((nextMetadata) => {
+        setLoaded((current) => new Map(current).set(dataset, {
+          metadata: nextMetadata,
+          supportingPaths: supportingVariablePaths(nextMetadata),
+        }));
+        setErrors((current) => {
+          const next = new Map(current);
+          next.delete(dataset);
+          return next;
+        });
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        setErrors((current) => new Map(current).set(dataset, message));
+      })
+      .finally(() => {
+        setLoading((current) => {
+          const next = new Set(current);
+          next.delete(dataset);
+          return next;
+        });
+      });
+  };
+
+  const supportingCount = [...loaded.values()].reduce(
+    (total, file) => total + file.supportingPaths.size,
+    0,
+  );
+  return (
+    <aside className="sidebar">
+      <div className="dataset-head">
+        <strong>NetCDF collection</strong>
+        <span>{datasets.length} files</span>
+      </div>
+      <div className="variable-filter">
+        <input
+          className="variable-search"
+          type="search"
+          placeholder="Filter loaded variables"
+          value={search}
+          onChange={(event) => onSearch(event.target.value)}
+        />
+        {supportingCount > 0 && (
+          <label>
+            <input
+              type="checkbox"
+              checked={showSupporting}
+              onChange={(event) => setShowSupporting(event.target.checked)}
+            />
+            Show coordinates and mesh geometry ({supportingCount})
+          </label>
+        )}
+      </div>
+      <div className="tree collection-tree">
+        {datasets.map((dataset) => {
+          const file = loaded.get(dataset.id);
+          const fileSelectedPath = dataset.id === selectedDataset ? selectedPath : "";
+          const visibleCount = file
+            ? countVisible(file.metadata, file.supportingPaths, showSupporting, fileSelectedPath)
+            : dataset.variables;
           return (
-            <details key={group.path} open>
-              <summary>{group.path === "/" ? "root group" : group.path}</summary>
-              {variables.map((variable) => (
-                <button
-                  key={variable.path}
-                  className="variable-row"
-                  data-supporting={supportingPaths.has(variable.path) || undefined}
-                  aria-selected={variable.path === selectedPath}
-                  title={`${variableLabel(variable)} · ${variable.dimensions.map((dimension) => dimension.name).join(", ") || "scalar"}`}
-                  onClick={() => onSelect(variable.path)}
-                >
-                  <span>{variable.name}</span>
-                  <small>{variable.dtype} · {variable.dimensions.map((dimension) => dimension.length).join("×") || "scalar"}</small>
-                </button>
-              ))}
+            <details
+              className="collection-file"
+              key={dataset.id}
+              open={dataset.id === selectedDataset || undefined}
+              onToggle={(event) => event.currentTarget.open && load(dataset.id)}
+            >
+              <summary>
+                <strong>{dataset.name}</strong>
+                <span>{visibleCount} variables</span>
+              </summary>
+              {loading.has(dataset.id) && !file && <p className="collection-note">Loading metadata…</p>}
+              {errors.has(dataset.id) && <p className="collection-error">{errors.get(dataset.id)}</p>}
+              {file && (
+                <>
+                  <VariableGroups
+                    metadata={file.metadata}
+                    supportingPaths={file.supportingPaths}
+                    showSupporting={showSupporting}
+                    query={query}
+                    selectedPath={fileSelectedPath}
+                    onSelect={(path) => onSelect(dataset.id, path)}
+                  />
+                  <MetadataWarnings metadata={file.metadata} />
+                </>
+              )}
             </details>
           );
         })}
       </div>
-      {metadata.warnings.length > 0 && (
-        <details className="warnings">
-          <summary>{metadata.warnings.length} metadata warning{metadata.warnings.length === 1 ? "" : "s"}</summary>
-          {metadata.warnings.map((warning) => <p key={warning}>{warning}</p>)}
-        </details>
-      )}
     </aside>
+  );
+}
+
+function VariableGroups({
+  metadata,
+  supportingPaths,
+  showSupporting,
+  query,
+  selectedPath,
+  onSelect,
+}: {
+  metadata: Metadata;
+  supportingPaths: Set<string>;
+  showSupporting: boolean;
+  query: string;
+  selectedPath: string;
+  onSelect: (path: string) => void;
+}) {
+  return metadata.groups.map((group) => {
+    const variables = metadata.variables.filter((variable) => {
+      const parent = variable.path.slice(0, variable.path.lastIndexOf("/")) || "/";
+      return (
+        parent === group.path &&
+        (showSupporting || !supportingPaths.has(variable.path) || variable.path === selectedPath) &&
+        (!query || variable.path.toLowerCase().includes(query))
+      );
+    });
+    if (!variables.length) return null;
+    return (
+      <details className="variable-group" key={group.path} open>
+        <summary>{group.path === "/" ? "root group" : group.path}</summary>
+        {variables.map((variable) => (
+          <button
+            key={variable.path}
+            className="variable-row"
+            data-supporting={supportingPaths.has(variable.path) || undefined}
+            aria-selected={variable.path === selectedPath}
+            title={`${variableLabel(variable)} · ${variable.dimensions.map((dimension) => dimension.name).join(", ") || "scalar"}`}
+            onClick={() => onSelect(variable.path)}
+          >
+            <span>{variable.name}</span>
+            <small>{variable.dtype} · {variable.dimensions.map((dimension) => dimension.length).join("×") || "scalar"}</small>
+          </button>
+        ))}
+      </details>
+    );
+  });
+}
+
+function countVisible(
+  metadata: Metadata,
+  supportingPaths: Set<string>,
+  showSupporting: boolean,
+  selectedPath: string,
+): number {
+  return metadata.variables.filter(
+    (variable) => showSupporting || !supportingPaths.has(variable.path) || variable.path === selectedPath,
+  ).length;
+}
+
+function MetadataWarnings({ metadata }: { metadata: Metadata }) {
+  if (!metadata.warnings.length) return null;
+  return (
+    <details className="warnings">
+      <summary>{metadata.warnings.length} metadata warning{metadata.warnings.length === 1 ? "" : "s"}</summary>
+      {metadata.warnings.map((warning) => <p key={warning}>{warning}</p>)}
+    </details>
   );
 }
 

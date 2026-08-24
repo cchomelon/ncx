@@ -17,16 +17,16 @@ function apiUrl(path: string): URL {
   return url;
 }
 
-export async function fetchDatasets(): Promise<DatasetSummary[]> {
+export async function fetchDatasets(): Promise<{ datasets: DatasetSummary[]; collection: boolean }> {
   const response = await fetch(apiUrl("datasets"), { cache: "no-store" });
   if (!response.ok) {
     throw new Error(await errorMessage(response));
   }
-  const body = (await response.json()) as { datasets?: DatasetSummary[] };
+  const body = (await response.json()) as { datasets?: DatasetSummary[]; collection?: boolean };
   if (!Array.isArray(body.datasets) || body.datasets.length === 0) {
     throw new Error("ncx returned no datasets");
   }
-  return body.datasets;
+  return { datasets: body.datasets, collection: body.collection === true };
 }
 
 export async function fetchMetadata(dataset?: string): Promise<Metadata> {

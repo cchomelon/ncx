@@ -226,6 +226,11 @@ export function isNumeric(variable: Variable): boolean {
   return /^(u|i)(8|16|32|64)$|^f(32|64)$/.test(variable.dtype);
 }
 
+export function isTimeCoordinate(variable: Variable): boolean {
+  return attributeText(variable, "axis")?.toUpperCase() === "T" ||
+    attributeText(variable, "standard_name") === "time";
+}
+
 export function meshGeometryPaths(metadata: Metadata): Set<string> {
   const paths = new Set<string>();
   const topologies = metadata.variables.filter(
@@ -250,11 +255,13 @@ export function meshGeometryPaths(metadata: Metadata): Set<string> {
     if (role.endsWith("_connectivity") || role === "location_index_set") {
       paths.add(variable.path);
     }
-    if (topologies.some((topology) => variable.name.startsWith(`${topology.name}_`))) {
-      paths.add(variable.path);
-    }
   }
   return paths;
+}
+
+/** Viewer-only paths folded away by default; the NetCDF metadata stays untouched. */
+export function supportingVariablePaths(metadata: Metadata): Set<string> {
+  return new Set([...coordinateVariablePaths(metadata), ...meshGeometryPaths(metadata)]);
 }
 
 /**
@@ -266,16 +273,18 @@ export function meshGeometryPaths(metadata: Metadata): Set<string> {
  * they describe the data rather than being it.
  */
 export function defaultVariable(metadata: Metadata): Variable | undefined {
-  const excluded = new Set([...coordinateVariablePaths(metadata), ...meshGeometryPaths(metadata)]);
+  const excluded = supportingVariablePaths(metadata);
   const candidates = metadata.variables.filter(isNumeric);
-  const data = candidates.filter((variable) => !excluded.has(variable.path));
+  const data = candidates.filter(
+    (variable) => !excluded.has(variable.path) && variable.dimensions.every((dimension) => dimension.length > 0),
+  );
   const score = (variable: Variable) => {
     const griddable = variable.view_hint.kind !== "plain";
     const animated = variable.dimensions.some((dimension) =>
       metadata.variables.some(
         (candidate) =>
           candidate.path === dimension.path &&
-          attributeText(candidate, "axis")?.toUpperCase() === "T",
+          isTimeCoordinate(candidate),
       ),
     );
     return (

@@ -6,6 +6,7 @@ import {
   coordinateVariablePaths,
   defaultVariable,
   formatUnit,
+  isTimeCoordinate,
   meshGeometryPaths,
   quantityLabel,
 } from "./model.ts";
@@ -33,6 +34,10 @@ test("identifies UGRID geometry without hiding mesh data fields", () => {
     { name: "mesh", dtype: "string", value: "Mesh2D" },
     { name: "location", dtype: "string", value: "node" },
   ]);
+  const temperature = variable("Mesh2D_temperature", [
+    { name: "mesh", dtype: "string", value: "Mesh2D" },
+    { name: "location", dtype: "string", value: "face" },
+  ]);
   const metadata = {
     variables: [
       topology,
@@ -40,13 +45,14 @@ test("identifies UGRID geometry without hiding mesh data fields", () => {
       variable("Mesh2D_node_y"),
       variable("Mesh2D_face_nodes", [{ name: "cf_role", dtype: "string", value: "face_node_connectivity" }]),
       depth,
+      temperature,
       field,
     ],
   } as Metadata;
 
   assert.deepEqual(
     [...meshGeometryPaths(metadata)].sort(),
-    ["/Mesh2D", "/Mesh2D_face_nodes", "/Mesh2D_node_depth", "/Mesh2D_node_x", "/Mesh2D_node_y"],
+    ["/Mesh2D", "/Mesh2D_face_nodes", "/Mesh2D_node_x", "/Mesh2D_node_y"],
   );
 });
 
@@ -99,9 +105,21 @@ test("coordinates are recognised as description, not as data", () => {
   assert.deepEqual([...coordinateVariablePaths(cfDataset())].sort(), ["/lat", "/lon", "/time"]);
 });
 
+test("CF standard_name identifies time without the optional axis attribute", () => {
+  assert.equal(isTimeCoordinate(variable("time", [
+    { name: "standard_name", dtype: "string", value: "time" },
+  ])), true);
+});
+
 test("a file opens on data that evolves, not on the first array in it", () => {
   // The old rule took the first griddable variable, which is /depth here.
   assert.equal(defaultVariable(cfDataset())?.path, "/temperature");
+});
+
+test("a file does not open on a variable with no samples", () => {
+  const metadata = cfDataset();
+  metadata.variables.find((candidate) => candidate.path === "/temperature")!.dimensions[0].length = 0;
+  assert.equal(defaultVariable(metadata)?.path, "/depth");
 });
 
 test("a file with nothing but coordinates still opens on something", () => {

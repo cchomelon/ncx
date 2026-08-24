@@ -56,6 +56,7 @@ impl Default for Limits {
 struct AppState {
     datasets: Vec<ServedDataset>,
     limits: Limits,
+    collection: bool,
 }
 
 pub struct ServedDataset {
@@ -88,12 +89,14 @@ struct DatasetSummary {
 #[derive(Serialize)]
 struct DatasetsResponse {
     datasets: Vec<DatasetSummary>,
+    collection: bool,
 }
 
 pub async fn serve<F>(
     listener: TcpListener,
     datasets: Vec<ServedDataset>,
     limits: Limits,
+    collection: bool,
     shutdown: F,
 ) -> NcxResult<()>
 where
@@ -106,7 +109,11 @@ where
     if datasets.iter().any(|dataset| !ids.insert(&dataset.id)) {
         return Err("ncx serve dataset IDs must be unique".to_owned());
     }
-    let state = Arc::new(AppState { datasets, limits });
+    let state = Arc::new(AppState {
+        datasets,
+        limits,
+        collection,
+    });
     let api = Router::new()
         .route("/datasets", get(dataset_list))
         .route("/meta", get(metadata))
@@ -170,7 +177,10 @@ async fn dataset_list(State(state): State<Arc<AppState>>) -> impl IntoResponse {
         .collect();
     (
         [(CACHE_CONTROL, HeaderValue::from_static("no-store"))],
-        Json(DatasetsResponse { datasets }),
+        Json(DatasetsResponse {
+            datasets,
+            collection: state.collection,
+        }),
     )
 }
 
@@ -439,6 +449,7 @@ mod tests {
         let single = AppState {
             datasets: vec![source("only")],
             limits: Limits::default(),
+            collection: false,
         };
         assert_eq!(single.select(None).unwrap().id, "only");
         let metadata = single.metadata_response(single.select(None).unwrap());
@@ -448,6 +459,7 @@ mod tests {
         let multiple = AppState {
             datasets: vec![source("case-a"), source("case-b")],
             limits: Limits::default(),
+            collection: false,
         };
         assert_eq!(
             multiple.select(None).err().unwrap().code,

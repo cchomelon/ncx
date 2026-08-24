@@ -356,6 +356,46 @@ button:disabled {
   font-weight: 600;
 }
 
+.collection-file > summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.collection-file > summary strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collection-file > summary span {
+  flex: none;
+  margin-left: auto;
+  color: var(--ink-quiet);
+  font-weight: 400;
+}
+
+.collection-file > .variable-group > summary {
+  padding-left: 20px;
+}
+
+.collection-file .variable-row {
+  padding-left: 30px;
+}
+
+.collection-note,
+.collection-error {
+  margin: 0;
+  padding: 7px 20px;
+  color: var(--ink-quiet);
+  font-size: 0.625rem;
+}
+
+.collection-error {
+  color: var(--error-ink);
+}
+
 .variable-row {
   display: grid;
   width: 100%;

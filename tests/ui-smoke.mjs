@@ -8,10 +8,10 @@ import { tmpdir } from "node:os";
 const ncx = dirname(dirname(fileURLToPath(import.meta.url)));
 const binary = join(ncx, "target/debug/ncx");
 const browserMode = process.argv[2] ?? "rectilinear";
-if (!["rectilinear", "curvilinear", "ugrid", "ugrid_projected", "comparison", "station"].includes(browserMode)) {
+if (!["rectilinear", "curvilinear", "ugrid", "ugrid_projected", "comparison", "collection", "station"].includes(browserMode)) {
   throw new Error(`unknown browser fixture ${JSON.stringify(browserMode)}`);
 }
-const fixture = join(ncx, `tests/data/${browserMode === "comparison" ? "rectilinear" : browserMode}.nc`);
+const fixture = join(ncx, `tests/data/${["comparison", "collection"].includes(browserMode) ? "rectilinear" : browserMode}.nc`);
 
 const injected = `<script>
 window.__ncxErrors = [];
@@ -127,6 +127,56 @@ try {
     if ((tooltip.match(/HKT/g) ?? []).length !== 2) {
       failures.push("station crosshair did not label both sample times");
     }
+  } else if (browserMode === "collection") {
+    const summaries = await waitFor(() => {
+      const items = [...document.querySelectorAll(".collection-file > summary")];
+      return items.length === 7 ? items : null;
+    }, "directory files were not grouped into summaries");
+    const names = summaries.map((summary) => summary.querySelector("strong")?.textContent);
+    const expected = [
+      "classic.nc",
+      "curvilinear.nc",
+      "groups.nc",
+      "rectilinear.nc",
+      "station.nc",
+      "ugrid.nc",
+      "ugrid_projected.nc",
+    ];
+    if (JSON.stringify(names) !== JSON.stringify(expected)) {
+      failures.push("collection files are not sorted: " + names.join(", "));
+    }
+    if (document.querySelector(".dataset-switcher")) {
+      failures.push("directory collection still exposes the dataset dropdown");
+    }
+    if (window.__ncxFetches.some((url) => url.includes("/api/meta?dataset=file-0006"))) {
+      failures.push("closed collection file fetched metadata eagerly");
+    }
+
+    summaries[5].click();
+    const ugrid = summaries[5].parentElement;
+    const nodeTemperature = await waitFor(
+      () => [...ugrid.querySelectorAll(".variable-row")]
+        .find((button) => button.querySelector("span")?.textContent === "node_temperature"),
+      "opening a file summary did not load its variables",
+    );
+    const metadataFetches = window.__ncxFetches
+      .filter((url) => url.includes("/api/meta?dataset=file-0006"));
+    if (metadataFetches.length !== 1) {
+      failures.push("opening one collection file made " + metadataFetches.length + " metadata requests");
+    }
+    const visible = [...ugrid.querySelectorAll(".variable-row span")].map((node) => node.textContent);
+    for (const supporting of ["mesh", "node_x", "node_y", "face_nodes", "edge_nodes", "edge_faces"]) {
+      if (visible.includes(supporting)) failures.push("collection exposed supporting variable " + supporting);
+    }
+    nodeTemperature.click();
+    await waitFor(
+      () => document.querySelector(".shell")?.dataset.dataset === "file-0006",
+      "collection variable did not switch files",
+    );
+    await waitFor(
+      () => document.querySelector(".mesh-canvas[data-rendered='true']"),
+      "collection UGRID variable did not render",
+    );
   } else if (browserMode === "comparison") {
     const dataset = await waitFor(
       () => document.querySelector(".dataset-switcher select"),
@@ -232,8 +282,11 @@ try {
 
     if (browserMode.startsWith("ugrid")) {
       const visibleVariables = [...document.querySelectorAll(".variable-row span")].map((row) => row.textContent);
-      if (visibleVariables.some((name) => /^Mesh2D(?:_|$)/.test(name))) {
-        failures.push("Mesh2D geometry variables were not filtered by default: " + visibleVariables.join(", "));
+      const supporting = browserMode === "ugrid_projected"
+        ? ["Mesh2D", "Mesh2D_node_x", "Mesh2D_node_y", "Mesh2D_node_lon", "Mesh2D_node_lat", "Mesh2D_face_nodes"]
+        : ["mesh", "node_x", "node_y", "face_nodes", "edge_nodes", "edge_faces"];
+      if (supporting.some((name) => visibleVariables.includes(name))) {
+        failures.push("UGRID geometry variables were not filtered by default: " + visibleVariables.join(", "));
       }
     }
 
@@ -292,7 +345,9 @@ try {
       offsetInputs[0].dispatchEvent(new Event("input", { bubbles: true }));
       await waitFor(
         () => [...document.querySelectorAll(".axis-label")]
-          .some((label) => label.textContent.includes("x offset +15 min")),
+          .some((label) => label.textContent.includes("display offsets")) &&
+          offsetInputs[0].value === "15" &&
+          !document.querySelector(".curve-offset-controls button")?.disabled,
         "single-case X offset was not applied",
       );
     }
@@ -470,6 +525,8 @@ const childArguments = browserMode === "comparison"
       "0",
       ...["a", "b", "c", "d", "e", "f"].flatMap((id) => ["--dataset", `case-${id}=${fixture}`]),
     ]
+  : browserMode === "collection"
+    ? ["serve", "--port", "0", join(ncx, "tests/data")]
   : ["serve", "--port", "0", fixture];
 const child = spawn(binary, childArguments, {
   cwd: ncx,

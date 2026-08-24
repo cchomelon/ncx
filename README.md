@@ -1,15 +1,22 @@
 # ncx
 
-`ncx` is a thin, read-only NetCDF viewer. It serves one file, or an explicit
-fixed set of named files, on IPv4 loopback; embeds its browser UI in the Rust
-executable; and can run beside remote data through an SSH local forward.
+`ncx` is a thin, read-only NetCDF viewer. It serves one file, a flat directory
+collection, or an explicit fixed set of named files on IPv4 loopback; embeds its
+browser UI in the Rust executable; and can run beside remote data through an SSH
+local forward.
 
 ```bash
 ncx open run.nc
+ncx open output/
 ncx open cluster:/absolute/path/run.nc
 ncx serve --port 8765 run.nc
 ncx serve --dataset case-a=/absolute/a.nc --dataset case-b=/absolute/b.nc
 ```
+
+A directory collection contains only its direct regular `.nc` files, sorted by
+filename; symlinks and nested directories are ignored. The sidebar groups
+variables by file and requests detailed metadata in the browser only when its
+summary opens.
 
 The UI browses groups and metadata; draws plain, rectilinear, curvilinear, and
 UGRID 2-D node, edge, and face fields; plots one-dimensional curves; animates
@@ -78,6 +85,7 @@ node tests/ui-smoke.mjs curvilinear
 node tests/ui-smoke.mjs ugrid
 node tests/ui-smoke.mjs ugrid_projected
 node tests/ui-smoke.mjs comparison
+node tests/ui-smoke.mjs collection
 ```
 
 The browser checks require Firefox and bind temporary loopback ports.
