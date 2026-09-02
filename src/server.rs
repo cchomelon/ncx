@@ -31,12 +31,45 @@ static VERSIONED_INDEX_HTML: LazyLock<String> = LazyLock::new(|| {
 });
 const APP_JAVASCRIPT: &[u8] = include_bytes!("../web/dist/assets/app.js");
 const APP_CSS: &[u8] = include_bytes!("../web/dist/assets/app.css");
-const FONT_LIGHT: &[u8] =
-    include_bytes!("../../Style/Fonts/AVHershey-OTF/otf/AVHersheySimplexLight.otf");
-const FONT_MEDIUM: &[u8] =
-    include_bytes!("../../Style/Fonts/AVHershey-OTF/otf/AVHersheySimplexMedium.otf");
-const FONT_HEAVY: &[u8] =
-    include_bytes!("../../Style/Fonts/AVHershey-OTF/otf/AVHersheySimplexHeavy.otf");
+// Fonts, embedded at compile time from `res/` so the binary is the whole
+// deliverable -- it has to be, since it is usually run over SSH on a cluster
+// that cannot reach a CDN.
+//
+// Gorton Perfected is the interface face, and it is licensed for use rather
+// than redistribution: serving the shipped `.otf` would hand every reader a
+// complete, installable copy. What is embedded here is a subset carrying only
+// the characters the viewer can set (`web/scripts/subset-fonts.py`), which is
+// 307 glyphs and 17 kB against the original's full outline set. The full font
+// never enters the binary and is never served.
+//
+// Commit Mono sets every value, and New Computer Modern Math sets every
+// mathematical symbol in any face. Both are SIL OFL 1.1, so both could ship
+// whole; Commit Mono is cut to the same character set as Gorton anyway. Its
+// upstream `ttfautohint` TrueType source is used instead of the CFF OTF so the
+// WOFF2 keeps its small-size grid-fitting tables. NewCM is already cut to a
+// math-only unicode-range upstream.
+//
+// Commit Mono was served from jsDelivr until now, which put the one face whose
+// whole job is column alignment behind the one dependency this binary cannot
+// satisfy: the viewer's usual home is an SSH tunnel to a cluster with no route
+// out. It was therefore missing precisely where it was needed.
+//
+// AVHershey draws plots; National Park backs it per glyph and sets chrome
+// labels. Both are freely redistributable. Only Gorton's build source and
+// subsets are gitignored; without that licence build.rs emits empty files, the
+// @font-face fails, and style.css falls through to the platform sans.
+const FONT_UI_REGULAR: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/gorton-400.woff2"));
+const FONT_UI_SEMIBOLD: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/gorton-600.woff2"));
+const FONT_MONO_REGULAR: &[u8] = include_bytes!("../res/CommitMono/commit-400.woff2");
+const FONT_MONO_BOLD: &[u8] = include_bytes!("../res/CommitMono/commit-700.woff2");
+const FONT_MATH: &[u8] = include_bytes!("../res/NewCM/NewCMMath-Regular.woff2");
+const FONT_PLOT_LIGHT: &[u8] = include_bytes!("../res/AVHershey/AVHersheySimplexLight.woff2");
+const FONT_PLOT_MEDIUM: &[u8] = include_bytes!("../res/AVHershey/AVHersheySimplexMedium.woff2");
+const FONT_PLOT_HEAVY: &[u8] = include_bytes!("../res/AVHershey/AVHersheySimplexHeavy.woff2");
+// AVHershey is a stroke font with 89 glyphs: no smart quotes, dashes,
+// ellipsis, superscripts or accents. National Park backs it per glyph so a
+// `long_name` with an accent or an en-dash still sets in the plot.
+const FONT_PLOT_FALLBACK: &[u8] = include_bytes!("../res/AVHershey/NationalPark.woff2");
 
 #[derive(Clone, Copy, Serialize)]
 pub struct Limits {
@@ -124,18 +157,15 @@ where
         .nest("/api", api)
         .route("/assets/app.js", get(app_javascript))
         .route("/assets/app.css", get(app_css))
-        .route(
-            "/Style/Fonts/AVHershey-OTF/otf/AVHersheySimplexLight.otf",
-            get(font_light),
-        )
-        .route(
-            "/Style/Fonts/AVHershey-OTF/otf/AVHersheySimplexMedium.otf",
-            get(font_medium),
-        )
-        .route(
-            "/Style/Fonts/AVHershey-OTF/otf/AVHersheySimplexHeavy.otf",
-            get(font_heavy),
-        )
+        .route("/fonts/gorton-400.woff2", get(font_ui_regular))
+        .route("/fonts/gorton-600.woff2", get(font_ui_semibold))
+        .route("/fonts/commit-400.woff2", get(font_mono_regular))
+        .route("/fonts/commit-700.woff2", get(font_mono_bold))
+        .route("/fonts/cmmath.woff2", get(font_math))
+        .route("/fonts/hershey-light.woff2", get(font_plot_light))
+        .route("/fonts/hershey-medium.woff2", get(font_plot_medium))
+        .route("/fonts/hershey-heavy.woff2", get(font_plot_heavy))
+        .route("/fonts/nationalpark.woff2", get(font_plot_fallback))
         .fallback(index)
         .with_state(state);
 
@@ -369,7 +399,7 @@ async fn api_not_found() -> Response {
 }
 
 fn font(bytes: &'static [u8]) -> Response {
-    static_asset("font/otf", bytes)
+    static_asset("font/woff2", bytes)
 }
 
 fn static_asset(content_type: &'static str, bytes: &'static [u8]) -> Response {
@@ -405,16 +435,40 @@ async fn app_css() -> Response {
     static_asset("text/css; charset=utf-8", APP_CSS)
 }
 
-async fn font_light() -> Response {
-    font(FONT_LIGHT)
+async fn font_ui_regular() -> Response {
+    font(FONT_UI_REGULAR)
 }
 
-async fn font_medium() -> Response {
-    font(FONT_MEDIUM)
+async fn font_ui_semibold() -> Response {
+    font(FONT_UI_SEMIBOLD)
 }
 
-async fn font_heavy() -> Response {
-    font(FONT_HEAVY)
+async fn font_mono_regular() -> Response {
+    font(FONT_MONO_REGULAR)
+}
+
+async fn font_mono_bold() -> Response {
+    font(FONT_MONO_BOLD)
+}
+
+async fn font_math() -> Response {
+    font(FONT_MATH)
+}
+
+async fn font_plot_light() -> Response {
+    font(FONT_PLOT_LIGHT)
+}
+
+async fn font_plot_medium() -> Response {
+    font(FONT_PLOT_MEDIUM)
+}
+
+async fn font_plot_heavy() -> Response {
+    font(FONT_PLOT_HEAVY)
+}
+
+async fn font_plot_fallback() -> Response {
+    font(FONT_PLOT_FALLBACK)
 }
 
 #[cfg(test)]

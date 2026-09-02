@@ -2,3 +2,8 @@
 /web/node_modules/
 *.swp
 .tmp/
+AGENTS.md
+res/gorton-perfected-1.02
+res/gen
+res/CommitMono/src
+res/AVHershey/src

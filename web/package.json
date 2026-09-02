@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "test": "node --test src/color.test.ts src/comparison.test.ts src/MapOverlay.test.ts src/mesh.test.ts src/model.test.ts src/projection.test.ts src/selection.test.ts src/ticks.test.ts src/time.test.ts src/view.test.ts"
+    "test": "node --test src/color.test.ts src/comparison.test.ts src/MapOverlay.test.ts src/mesh.test.ts src/model.test.ts src/plotgeom.test.ts src/projection.test.ts src/selection.test.ts src/ticks.test.ts src/time.test.ts src/view.test.ts"
   },
   "dependencies": {
     "react": "^19.2.8",

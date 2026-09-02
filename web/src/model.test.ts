@@ -44,6 +44,7 @@ test("identifies UGRID geometry without hiding mesh data fields", () => {
       variable("Mesh2D_node_x"),
       variable("Mesh2D_node_y"),
       variable("Mesh2D_face_nodes", [{ name: "cf_role", dtype: "string", value: "face_node_connectivity" }]),
+      variable("Mesh2D_face_x"),
       depth,
       temperature,
       field,
@@ -52,7 +53,7 @@ test("identifies UGRID geometry without hiding mesh data fields", () => {
 
   assert.deepEqual(
     [...meshGeometryPaths(metadata)].sort(),
-    ["/Mesh2D", "/Mesh2D_face_nodes", "/Mesh2D_node_x", "/Mesh2D_node_y"],
+    ["/Mesh2D", "/Mesh2D_face_nodes", "/Mesh2D_face_x", "/Mesh2D_node_x", "/Mesh2D_node_y"],
   );
 });
 

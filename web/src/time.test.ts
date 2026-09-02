@@ -30,8 +30,8 @@ test("formats CF time once for titles, curves, and the timeline", () => {
   const time = describeTime(variable);
   assert.ok(time);
   assert.equal(formatTimestamp(18, time), "2024-07-25 18:00 UTC+08:00");
-  assert.deepEqual(timeTickLabel(0, time), { primary: "25", month: "JUL", day: true });
-  assert.deepEqual(timeTickLabel(6, time), { primary: "06" });
+  assert.deepEqual(timeTickLabel(0, time, 18), { primary: "00" });
+  assert.deepEqual(timeTickLabel(6, time, 18), { primary: "06" });
 });
 
 test("accepts the common UTC suffix used by CF files", () => {
@@ -42,6 +42,22 @@ test("accepts the common UTC suffix used by CF files", () => {
   const time = describeTime(utcVariable);
   assert.ok(time);
   assert.equal(formatTimestamp(6, time), "2024-07-25 06:00 UTC");
+  assert.deepEqual(timeTickLabel(0, time, 18), { primary: "00Z" });
+  assert.deepEqual(timeTickLabel(6, time, 18), { primary: "06Z" });
+});
+
+test("uses Style date-time labels without repeating one UTC hour across days", () => {
+  const utcVariable = {
+    ...variable,
+    attributes: [{ name: "units", dtype: "string", value: "hours since 2024-07-25 06:00:00 UTC" }],
+  };
+  const time = describeTime(utcVariable);
+  assert.ok(time);
+  assert.deepEqual([0, 24, 48].map((value) => timeTickLabel(value, time, 48)), [
+    { primary: "25 Jul", secondary: "06Z", day: true },
+    { primary: "26 Jul", secondary: "06Z", day: true },
+    { primary: "27 Jul", secondary: "06Z", day: true },
+  ]);
 });
 
 test("changes display timezone without changing the CF time instant", () => {

@@ -10,6 +10,7 @@ import { colorForValue, colorPosition, type ColorRange } from "./color";
 import type { ColorScale } from "./model";
 import type { ColormapChoice } from "./color";
 import { axisTicks, tickCountForLength } from "./ticks";
+import { DEFAULT_TYPE, TICK, axisOffsets, colorbarGeometry, widestLabel, type PlotType } from "./plotgeom";
 
 export interface PlotBounds {
   left: number;
@@ -18,8 +19,11 @@ export interface PlotBounds {
   height: number;
 }
 
-/** Room the colourbar column needs: gap, bar, ticks, labels, rotated caption. */
-export const COLORBAR_WIDTH = 62;
+/** Room the colourbar column needs: gap, bar, ticks, labels, rotated caption.
+ *  Derived from the live type size -- see `plotgeom.colorbarGeometry`. */
+export function colorbarWidth(type: PlotType): number {
+  return colorbarGeometry(type).total;
+}
 
 const RAMP_STOPS = 24;
 
@@ -42,6 +46,7 @@ export function PlotAxes({
   yLabel,
   boxed = false,
   grid = false,
+  type = DEFAULT_TYPE,
 }: {
   plot: PlotBounds;
   xDomain: [number, number];
@@ -52,6 +57,8 @@ export function PlotAxes({
   boxed?: boolean;
   /** Faint y-only gridlines, for reading a value off a curve. */
   grid?: boolean;
+  /** Live plot type sizes; furniture offsets are derived from them. */
+  type?: PlotType;
 }) {
   const x = axisTicks(xDomain[0], xDomain[1], tickCountForLength(plot.width));
   const y = axisTicks(yDomain[0], yDomain[1], tickCountForLength(plot.height, 58));
@@ -59,6 +66,7 @@ export function PlotAxes({
   const yAt = scaleFor(yDomain, plot.height, true);
   const bottom = plot.top + plot.height;
   const right = plot.left + plot.width;
+  const offset = axisOffsets(type, widestLabel(y.values, y.format));
   return (
     <g
       className="plot-axis"
@@ -84,8 +92,8 @@ export function PlotAxes({
         const position = plot.left + xAt(value);
         return (
           <g key={`x-${value}`}>
-            <line x1={position} x2={position} y1={bottom} y2={bottom + 5} />
-            <text x={position} y={bottom + 18} textAnchor="middle">{x.format(value)}</text>
+            <line x1={position} x2={position} y1={bottom} y2={bottom + TICK} />
+            <text x={position} y={bottom + offset.xLabel} textAnchor="middle">{x.format(value)}</text>
           </g>
         );
       })}
@@ -93,17 +101,34 @@ export function PlotAxes({
         const position = plot.top + yAt(value);
         return (
           <g key={`y-${value}`}>
-            <line x1={plot.left - 5} x2={plot.left} y1={position} y2={position} />
-            <text x={plot.left - 9} y={position + 4} textAnchor="end">{y.format(value)}</text>
+            <line x1={plot.left - TICK} x2={plot.left} y1={position} y2={position} />
+            <text
+              x={plot.left - offset.yLabel}
+              y={position}
+              dy="0.32em"
+              textAnchor="end"
+            >
+              {y.format(value)}
+            </text>
           </g>
         );
       })}
-      <text className="axis-label" x={plot.left + plot.width / 2} y={bottom + 42} textAnchor="middle">
-        {xLabel}
-      </text>
       <text
         className="axis-label"
-        transform={`translate(18 ${plot.top + plot.height / 2}) rotate(-90)`}
+        x={plot.left + plot.width / 2}
+        y={bottom + offset.xTitle}
+        dy="0.32em"
+        textAnchor="middle"
+      >
+        {xLabel}
+      </text>
+      {/* Anchored to the frame, not to the SVG. `fitPlotToBounds` slides the
+          plot sideways to hold the coordinate aspect ratio, and a title pinned
+          to the viewport's edge drifts away from the axis it belongs to. */}
+      <text
+        className="axis-label"
+        transform={`translate(${plot.left - offset.yTitle} ${plot.top + plot.height / 2}) rotate(-90)`}
+        dy="0.32em"
         textAnchor="middle"
       >
         {yLabel}
@@ -126,17 +151,21 @@ export function Colorbar({
   colormap,
   scale,
   label,
+  type = DEFAULT_TYPE,
 }: {
   plot: PlotBounds;
   range: ColorRange;
   colormap: ColormapChoice;
   scale: ColorScale;
   label: string;
+  type?: PlotType;
 }) {
-  const width = 13;
-  const left = plot.left + plot.width + 16;
   const gradientId = `ramp-${colormap}`;
   const ticks = axisTicks(range.minimum, range.maximum, tickCountForLength(plot.height, 52));
+  const bar = colorbarGeometry(type, widestLabel(ticks.values, ticks.format));
+  const width = bar.bar;
+  const right = plot.left + plot.width;
+  const left = right + bar.gap;
   return (
     <g className="colorbar-axis" aria-hidden="true">
       <defs>
@@ -162,14 +191,14 @@ export function Colorbar({
         const y = plot.top + (1 - position) * plot.height;
         return (
           <g key={value}>
-            <line x1={left + width} x2={left + width + 4} y1={y} y2={y} />
-            <text x={left + width + 7} y={y + 4}>{ticks.format(value)}</text>
+            <line x1={left + width} x2={left + width + bar.mark} y1={y} y2={y} />
+            <text x={right + bar.labelX} y={y} dy="0.32em">{ticks.format(value)}</text>
           </g>
         );
       })}
       <text
         className="axis-label"
-        transform={`translate(${left + width + 46} ${plot.top + plot.height / 2}) rotate(-90)`}
+        transform={`translate(${right + bar.captionX} ${plot.top + plot.height / 2}) rotate(-90)`}
         textAnchor="middle"
       >
         {label}

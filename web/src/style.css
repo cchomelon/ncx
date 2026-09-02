@@ -1,21 +1,116 @@
+/* ---------------------------------------------------------------------------
+   Four faces, four jobs.
+
+   Gorton Perfected  interface text. An engraving face: monoline, geometric,
+                     drawn for a pantograph rather than a press. It is the
+                     right voice for an instrument, and it needs handling --
+                     see the tracking and leading ladders below.
+   Commit Mono       every variable name, value, coordinate and unit. True
+                     monospace, so a column of numbers is a column. Gorton is
+                     not monospaced and must never be asked to align data.
+   AVHershey Simplex plot glyphs, matching the project's printed figures, with
+                     National Park behind it for the 200-odd characters a
+                     89-glyph stroke font does not have.
+
+   CM Math       every mathematical symbol, in any of the above. Not a class
+                     and not a span: it leads every stack below carrying a
+                     unicode-range of Greek, arrows and the operator block, and
+                     font matching runs per character, so a Greek letter in a
+                     `long_name` comes out in LaTeX's face wherever it appears.
+                     It also covers a real gap -- Gorton carries no lowercase
+                     Greek and no superscripts at all.
+
+   Every face is served by the ncx binary itself, because this viewer's usual
+   home is an SSH tunnel to a cluster with no route to a CDN. Commit Mono used
+   to be pulled from jsDelivr, which meant the one face whose entire job is
+   column alignment was also the one face that silently went missing exactly
+   where the viewer normally runs.
+   ------------------------------------------------------------------------ */
+
+/* Gorton Perfected, subset to the 307 characters this viewer can set
+   (web/scripts/subset-fonts.py). Licensed for use, not redistribution, so the
+   full font is never embedded and never served. */
+@font-face {
+  font-family: "Gorton Perfected";
+  src: url("/fonts/gorton-400.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Gorton Perfected";
+  src: url("/fonts/gorton-600.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+
+/* Commit Mono, SIL OFL 1.1, cut to the same 307 characters as Gorton
+   (web/scripts/subset-fonts.py). Both faces need the same coverage because
+   either can be handed the same `long_name`, and a units string that drops out
+   of Commit Mono mid-word loses the alignment it is carried for. */
+@font-face {
+  font-family: "Commit Mono";
+  src: url("/fonts/commit-400.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Commit Mono";
+  src: url("/fonts/commit-700.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+
+/* New Computer Modern Math, SIL OFL 1.1 -- LaTeX's face, mounted by
+   unicode-range rather than by markup. Because font matching is per character,
+   naming this first in every stack sets Greek, arrows and operators in it
+   everywhere, including inside SVG plot labels, with no wrapper element.
+
+   Degree and per-mille are deliberately outside the range: they occur inside
+   Commit Mono readouts, where they must keep the monospace advance.
+
+   One consequence, handled at the call site: `text-transform: uppercase` turns
+   the eta of a water level into a capital Eta, which in Computer Modern is drawn as
+   a Roman H -- a different quantity. Any transformed label must therefore wrap
+   its symbol in an element that opts out of the transform. */
+@font-face {
+  font-family: "CM Math";
+  src: url("/fonts/cmmath.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+  unicode-range: U+00B1, U+00D7, U+00F7, U+0370-03FF, U+2190-21FF, U+2200-22FF;
+}
+
 @font-face {
   font-family: "AVHershey Simplex";
-  src: url("../Style/Fonts/AVHershey-OTF/otf/AVHersheySimplexLight.otf") format("opentype");
+  src: url("/fonts/hershey-light.woff2") format("woff2");
   font-weight: 300;
   font-display: swap;
 }
 
 @font-face {
   font-family: "AVHershey Simplex";
-  src: url("../Style/Fonts/AVHershey-OTF/otf/AVHersheySimplexMedium.otf") format("opentype");
+  src: url("/fonts/hershey-medium.woff2") format("woff2");
   font-weight: 400;
   font-display: swap;
 }
 
 @font-face {
   font-family: "AVHershey Simplex";
-  src: url("../Style/Fonts/AVHershey-OTF/otf/AVHersheySimplexHeavy.otf") format("opentype");
+  src: url("/fonts/hershey-heavy.woff2") format("woff2");
   font-weight: 700;
+  font-display: swap;
+}
+
+/* National Park backs AVHershey per glyph. Hershey has no smart quotes, no
+   dashes, no ellipsis, no superscripts and no accents; National Park has all
+   of them, and lacks only the degree sign -- which Hershey does have, so the
+   pair covers every character in the checklist between them. */
+@font-face {
+  font-family: "National Park";
+  src: url("/fonts/nationalpark.woff2") format("woff2");
+  font-weight: 400;
   font-display: swap;
 }
 
@@ -54,7 +149,7 @@
      WCAG 2.2 SC 1.4.3 asks of body text, and these labels are 9-10px. So the
      web gets a fourth grey: the same job, dark enough to be legal. Gridlines
      keep --ink-weak, which carries no text and is held to 3:1 as a graphical
-     object under SC 1.4.11. */
+     object under SC 1.4.11. On the light stock (#fffcf4), this clears 4.60:1. */
   --ink-quiet: #6e747d;
   --line: #dcdfe3;
   --line-faint: #ecedef;
@@ -65,16 +160,90 @@
   --accent: #114160;
   --accent-pale: #e7edf2;
 
-  /* Type. base 8pt on the modular scale ratio 2^(1/4), expressed in rem
-     against a 16px root so the ladder survives the reader's own font size:
-     8 / 9.51 / 11.31 / 13.45 pt -> 0.667 / 0.792 / 0.943 / 1.121 rem.
-     `--size-micro` is the flat 0.85x the style uses for provenance lines. */
-  --size-micro: 0.567rem;
-  --size-tick: 0.667rem;
-  --size-body: 0.792rem;
-  --size-title: 0.943rem;
-  --size-figure: 1.121rem;
-  --line-height: 1.35; /* rc.LINESPACING: Simplex's ascent needs the room */
+  /* Materials. Four surfaces, each meaning exactly one thing; a fifth surface
+     is not allowed, it has to join one of these.
+
+       --paper  data. Calibrated and untouchable: every figure, every table.
+                Already declared above, because it was always the ground.
+       --stock  the sheet. Sidebars and page ground, grain left visible.
+       --amber  things you operate. Command strips and section bars.
+       --plate  telemetry. Once per surface, for a line that reports rather
+                than offers an action.
+
+     The ochre is Standard B -- the signage standard, where a colour names an
+     identity or a state and never a magnitude. It is the one aggressive flood
+     in the interface, and it never appears without a word or a value on it, so
+     the page still reads in greyscale. The plot's own colour maps are Standard
+     A and are calibrated against --paper; the two standards never mix, and no
+     chrome surface may borrow a ramp. */
+  --stock: #fffcf4;
+  --stock-deep: #f2ecdd;
+  --stock-edge: #ded5be;
+  --amber: #ffc055;
+  --amber-deep: #d38f24;
+  --amber-pale: #f6e3bd;
+  --plate: #14181d;
+  --plate-line: #3a4048;
+  --plate-text: #f2f1ec;
+  --plate-quiet: #9aa0a8;
+
+  /* Type. The print ladder's modular ratio, 2^(1/4), anchored for a screen.
+     The print base is 8pt, and an earlier revision set that as 8/16 rem --
+     which reads the point size as if a CSS pixel were a printer's point. It
+     is not: a page is held at 30cm and printed at 400dpi, a screen sits at
+     60cm on a 1x grid, and the same nominal size loses roughly a third of its
+     apparent height on the way over. It put body copy at 12.7px and metadata
+     at 9.1px, both under any reasonable web floor.
+
+     So the ladder is re-anchored, not re-proportioned: `--size-body` is 1rem,
+     the browser's own default and the floor for ordinary web body text, and
+     every other role is the same 2^(1/4) step away from it that it was on
+     paper. Enlarging the root still enlarges the whole ladder together.
+
+       micro  0.750rem  12px   provenance, table heads, dtype and shape
+       tick   0.813rem  13     dense chrome, table cells, controls
+       body   0.875rem  14     default text, and the topbar path
+       title  1.000rem  16     panel and plot titles
+       figure 1.125rem  18     the brand
+
+     Two things stop this being a clean 2^(1/4) geometric run.
+
+     The top of the ladder is pulled in. A 16px body with a 19px title reads
+     heavy in a viewer this dense -- the chrome is nearly all labels, and a
+     label set at reading size behaves like a headline. 14px is the size at
+     which the topbar path stops shouting, and the roles above it follow.
+
+     The bottom is quantised. A geometric ratio below about 16px lands on
+     sizes the pixel grid rounds together: 12, 12.4 and 13.1 are two distinct
+     sizes, not three. So the small end steps by whole pixels, and 12px is the
+     floor -- nothing in this interface is smaller. */
+  --size-micro: 0.75rem;
+  --size-tick: 0.8125rem;
+  --size-body: 0.875rem;
+  --size-title: 1rem;
+  --size-figure: 1.125rem;
+  /* Tracking. Gorton is monoline: every stroke is the same weight, so adjacent
+     letters have no thick/thin rhythm to separate them and the eye needs the
+     gap instead. The smaller the setting, the more it needs -- and the larger,
+     the less, because at display size the geometry is legible on its own. */
+  --track-body: 0.015em;   /* 14-16px running text */
+  --track-small: 0.025em;  /* 11-13px labels, table cells, readouts */
+  /* National Park's caps cohere on their own and need less air than Gorton's
+     did. 0.06em is the bottom of the usual all-caps range rather than the top. */
+  --track-caps: 0.06em;
+  --track-display: -0.005em; /* 24px and up */
+
+  /* Gorton's space glyph is drawn for isolated engraved labels and is wide for
+     running text; pulling it in stops sentences reading as loose word-islands. */
+  --word-space: -0.02em;
+
+  /* Leading. Uniform stroke weight builds a "fence of verticals" down a
+     paragraph, and extra leading is what breaks it up -- so body sits above
+     the ~1.5 a normal sans would take. Dense single-line UI does not have the
+     problem and does not pay for the fix. */
+  --line-height: 1.65;       /* running text */
+  --line-height-ui: 1.45;    /* labels, controls, table cells */
+  --line-height-tight: 1.25; /* headings and display */
 
   /* Stroke, from rc.S0 = 0.7 pt. Web floors every furniture weight at the
      hairline a 1x display can actually draw -- below 1 device pixel the
@@ -87,8 +256,29 @@
   --stroke-data: 1.75px;
   --stroke-emphasis: 2.25px;
 
-  --plot-face: "AVHershey Simplex", system-ui, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, monospace;
+  /* Commit Mono sits at the back as the last shipped face. Hershey is 89
+     glyphs, National Park has no superscripts and CM Math is math-only, so a
+     unit written properly -- `m s⁻¹` -- had no home in this stack and fell to
+     the platform. It is never reached for text; only for what the three
+     faces in front of it cannot draw. */
+  --plot-face: "CM Math", "AVHershey Simplex", "National Park", "Commit Mono", system-ui, sans-serif;
+  /* Every variable name, value, coordinate and unit. Commit Mono first, the
+     platform monospace behind it -- both align, which is the whole job. */
+  --mono: "CM Math", "Commit Mono", ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, monospace;
+  /* All-caps labels are set in National Park, not Gorton.
+     Gorton Perfected was drawn for an engraving pantograph, one glyph cut at a
+     time on a plate, and its capitals inherit that: a perfectly circular O, a
+     wide N and M, and no relationship between neighbours. Set as a word they
+     do not cohere -- NODE reads as four separate marks -- and tracking, which
+     is what all-caps normally wants, makes it worse. National Park is a
+     signage face; its caps are narrower, ovate rather than circular, and drawn
+     to be read as words at a distance. Which is what these labels are: signage
+     naming a control, not prose.
+
+     It costs nothing. National Park is already embedded and served as the
+     per-glyph fallback behind AVHershey in the plots. */
+  --label-face: "CM Math", "National Park", ui-sans-serif, system-ui, sans-serif;
+  --ui-face: "CM Math", "Gorton Perfected", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --hit: 24px; /* WCAG 2.2 SC 2.5.8, minimum target */
 
   /* Status colours. Never the only channel -- each is paired with a word or an
@@ -102,16 +292,31 @@
   --raised: rgb(255 255 255 / 88%); /* tooltips and chips over data */
   --shadow: rgb(0 0 0 / 8%);
 
-  --topbar-height: 38px;
+  --topbar-height: 32px;
   --toolbar-height: 46px;
-  --timeline-height: 68px;
+  --timeline-height: 74px;
   --status-height: 25px;
   --sidebar-width: 260px;
 
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--ui-face);
+  /* Gorton sets tight, and a monoline face needs air between strokes to stay
+     distinct on a screen. See the tracking ladder below. */
+  letter-spacing: var(--track-body);
+  word-spacing: var(--word-space);
   font-size: var(--size-body);
   color: var(--ink);
   background: var(--paper);
+  /* Figures line up in columns and a zero never reads as an O. Inert until
+     now: the subset kept `kern` only, so `tnum` and `zero` were not in the
+     file to switch on (web/scripts/subset-fonts.py). */
+  font-variant-numeric: tabular-nums slashed-zero;
+  /* Four single-glyph drafting forms. Deliberately not ss01, which the foundry
+     names "Not ugly variants" -- it cleans up precisely the machine-cut forms
+     this face was chosen for. */
+  /* ss02/04/06/12 are Gorton drafting forms; cv03 squares Commit Mono's
+     dots and colons to match the engraved chrome. Each face ignores the
+     other's tags, so one declaration tunes both. */
+  font-feature-settings: "ss02" 1, "ss04" 1, "ss06" 1, "ss12" 1, "cv03" 1;
 }
 
 * {
@@ -121,6 +326,7 @@
 html,
 body,
 #app {
+  line-height: var(--line-height-ui);
   width: 100%;
   height: 100%;
   margin: 0;
@@ -141,7 +347,7 @@ input[type="search"],
 input[type="number"] {
   min-height: 27px;
   border: 1px solid var(--line);
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--paper);
 }
 
@@ -199,11 +405,38 @@ button:disabled {
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
+  width: 100%;
+  height: var(--topbar-height);
   min-width: 0;
-  border-bottom: 1px solid var(--line);
-  background: var(--panel);
+  border-bottom: 1px solid var(--ink);
+  background: var(--amber);
+
+  /* The grey ladder is calibrated against white. On this ochre, --ink-quiet
+     falls to 2.9:1 and --line to 1.2:1, so quiet text and separators disappear.
+     Re-point this surface at its warm, dark end rather than inventing colours:
+     --ink for type and rules (11.4:1), --warn-ink for de-emphasis (6.8:1), and
+     --accent for focus (6.6:1). Controls keep their --paper wells. */
+  --line: var(--ink);
+  --ink-medium: var(--warn-ink);
+  --ink-quiet: var(--warn-ink);
 }
 
+/* -----------------------------------------------------------------------
+   Drawn icons.
+
+   The disclosure caret, the menu bars and the transport marks used to be
+   characters -- U+25B8, U+2630, U+25C0, U+25B6, U+25A0, U+2502. No face in any
+   stack here carries any of them: not Gorton, not Commit Mono, not New
+   Computer Modern, not AVHershey, not National Park. So each one fell through
+   the entire stack and landed on whatever the operating system volunteered,
+   which on Windows is a CJK UI face several hundred units away in weight and
+   width from everything around it.
+
+   Subsetting cannot fix it, because the source fonts do not have the glyphs
+   either. A mark that is part of the interface should not be waiting on a
+   character to exist, so these are geometry instead: clipped boxes, solid
+   strokes, and `currentColor` so every one inherits the control's state.
+   ----------------------------------------------------------------------- */
 .sidebar-toggle {
   align-self: stretch;
   min-width: 38px;
@@ -211,15 +444,25 @@ button:disabled {
   border-right: 1px solid var(--line);
   border-radius: 0;
   background: transparent;
-  font-size: 16px;
+  font-size: var(--size-body);
+}
+
+.sidebar-toggle::before {
+  content: "";
+  display: block;
+  width: 14px;
+  height: 1.5px;
+  margin: 0 auto;
+  background: currentColor;
+  box-shadow: 0 -4.25px 0 currentColor, 0 4.25px 0 currentColor;
 }
 
 .brand {
   padding: 0 13px;
   font-family: var(--plot-face);
-  font-size: 17px;
+  font-size: var(--size-title);
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: var(--track-small);
 }
 
 .path {
@@ -231,6 +474,11 @@ button:disabled {
   color: var(--ink-medium);
   white-space: nowrap;
   text-overflow: ellipsis;
+  /* A dataset name and a variable path are data, not chrome. They also carry
+     whatever characters the file carries -- and Gorton has no superscripts, so
+     a unit like `m s-1` written properly fell out of the stack here. */
+  font-family: var(--mono);
+  letter-spacing: normal;
 }
 
 .path b {
@@ -250,24 +498,18 @@ button:disabled {
   border-right: 1px solid var(--line);
   color: var(--ink-quiet);
   font-size: var(--size-tick);
-  font-weight: 650;
+  letter-spacing: var(--track-small);
+  font-weight: 400;
   text-transform: uppercase;
+  font-family: var(--label-face);
+  letter-spacing: var(--track-caps);
 }
 
 .dataset-switcher select {
   min-width: 120px;
   font-family: var(--mono);
+  letter-spacing: normal;
   text-transform: none;
-}
-
-.read-only {
-  margin-left: auto;
-  padding: 2px 8px;
-  border-left: 1px solid var(--line);
-  color: var(--ink-quiet);
-  font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.08em;
 }
 
 .shell[data-embedded="true"] .topbar .brand,
@@ -279,47 +521,64 @@ button:disabled {
   grid-column: 1;
   grid-row: 2;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border-right: 1px solid var(--line);
-  background: var(--panel);
+  border-right: 1px solid var(--stock-edge);
   transition: visibility 0s;
+
+  /* Stock, with the grain left in. One turbulence tile multiplied into the
+     colour -- no asset, no JS, and no overlay element, which is the point:
+     `background-blend-mode` keeps the grain inside this box's own background,
+     so it cannot leak onto .stage or .figure and cannot sit over data. Those
+     are --paper and stay --paper; a texture over a calibrated colour map would
+     be reading noise as signal. */
+  background-color: var(--stock);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='.1'/%3E%3C/svg%3E");
+  background-blend-mode: multiply;
+
+  /* Rules go warm with the ground; the cool greys read as dirt on stock. */
+  --line: var(--stock-edge);
+  --line-faint: color-mix(in srgb, var(--stock-edge) 55%, var(--stock));
 }
 
 .shell[data-sidebar="closed"] .sidebar {
   visibility: hidden;
 }
 
+.collection-sidebar {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
 .dataset-head {
   display: flex;
-  justify-content: space-between;
-  gap: 8px;
+  justify-content: flex-end;
   padding: 11px 12px 7px;
 }
 
-.dataset-head strong {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .dataset-head span {
-  flex: none;
   color: var(--ink-quiet);
-  font-size: 0.625rem;
+  font-size: var(--size-micro);
+  /* A bare count is a value. */
+  font-family: var(--mono);
+  letter-spacing: normal;
 }
 
 .variable-filter {
-  padding: 0 10px 8px;
+  padding: 10px 10px 8px;
+}
+
+.collection-sidebar .variable-filter {
+  padding-top: 0;
 }
 
 .variable-search {
   width: 100%;
   margin: 0;
   padding: 0 8px;
+  font-family: var(--mono);
+  letter-spacing: normal;
 }
 
 .variable-filter label {
@@ -328,7 +587,8 @@ button:disabled {
   gap: 5px;
   margin-top: 6px;
   color: var(--ink-medium);
-  font-size: 0.625rem;
+  font-size: var(--size-micro);
+  letter-spacing: var(--track-small);
 }
 
 .variable-filter input[type="checkbox"] {
@@ -352,8 +612,35 @@ button:disabled {
   color: var(--ink-medium);
   cursor: pointer;
   font-family: var(--mono);
-  font-size: 0.625rem;
+  letter-spacing: normal;
+  font-size: var(--size-tick);
   font-weight: 600;
+  /* The UA marker is a character as well, and not one this binary ships. */
+  list-style: none;
+}
+
+.tree summary::-webkit-details-marker,
+.warnings summary::-webkit-details-marker {
+  display: none;
+}
+
+.tree summary::before,
+.warnings summary::before {
+  content: "";
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-right: 7px;
+  vertical-align: 0.05em;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  border-left: 5px solid currentColor;
+}
+
+.tree details[open] > summary::before,
+.warnings details[open] > summary::before {
+  /* Rotation, not a second shape: one mark with two states. */
+  transform: rotate(90deg);
 }
 
 .collection-file > summary {
@@ -389,7 +676,8 @@ button:disabled {
   margin: 0;
   padding: 7px 20px;
   color: var(--ink-quiet);
-  font-size: 0.625rem;
+  font-size: var(--size-tick);
+  letter-spacing: var(--track-small);
 }
 
 .collection-error {
@@ -421,6 +709,9 @@ button:disabled {
 }
 
 .variable-row span {
+  font-family: var(--mono);
+  font-size: 0.8928571429rem;
+  letter-spacing: normal;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -431,7 +722,8 @@ button:disabled {
   margin-top: 1px;
   color: var(--ink-quiet);
   font-family: var(--mono);
-  font-size: 9px;
+  letter-spacing: normal;
+  font-size: var(--size-micro);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -447,7 +739,8 @@ button:disabled {
 .warnings p {
   margin: 0;
   padding: 4px 10px;
-  font-size: 10px;
+  font-size: var(--size-tick);
+  letter-spacing: var(--track-small);
 }
 
 .main {
@@ -546,26 +839,33 @@ button:disabled {
   align-items: center;
   gap: 4px;
   color: var(--ink-medium);
-  font-size: 10px;
-  font-weight: 650;
+  font-size: var(--size-micro);
+  letter-spacing: var(--track-small);
+  font-weight: 400;
   text-transform: uppercase;
+  font-family: var(--label-face);
+  letter-spacing: var(--track-caps);
 }
 
 .display-controls select,
 .display-controls input {
   width: auto;
-  max-width: 130px;
+  max-width: 168px;
   height: 28px;
   color: var(--ink);
-  font-size: 11px;
+  font-size: var(--size-tick);
   font-weight: 400;
   text-transform: none;
+  /* Every value in this strip comes out of the file: dimension names,
+     coordinate paths, colourmap names, indices. The uppercase label beside it
+     is chrome and stays in the signage face; the value is data. */
+  font-family: var(--mono);
+  letter-spacing: normal;
 }
 
 .display-controls input[type="number"] {
   width: 68px;
   padding: 0 5px;
-  font-family: var(--mono);
 }
 
 .display-controls .range-values {
@@ -584,7 +884,8 @@ button:disabled {
 .dimension-readout output {
   color: var(--ink);
   font-family: var(--mono);
-  font-size: 10px;
+  letter-spacing: normal;
+  font-size: var(--size-tick);
   font-weight: 400;
   text-transform: none;
 }
@@ -592,7 +893,8 @@ button:disabled {
 .screenshot-button {
   flex: none;
   min-height: 28px;
-  font-size: 10px;
+  font-size: var(--size-tick);
+  letter-spacing: var(--track-small);
   font-weight: 650;
 }
 
@@ -607,12 +909,18 @@ button:disabled {
   /* Fluid between a floor and a ceiling, both taken from the type ladder and
      both in rem: the panel scales the figure with the window, and the reader's
      own font size still moves the whole ladder. A px floor would pin the
-     smallest type on the page to a size the reader cannot change. */
-  --plot-title-size: clamp(var(--size-title), min(1.35cqi, 2.2cqb), calc(var(--size-title) * 1.35));
-  --plot-subtitle-size: clamp(var(--size-tick), min(0.94cqi, 1.52cqb), calc(var(--size-tick) * 1.35));
-  --plot-tick-size: clamp(var(--size-tick), min(0.98cqi, 1.58cqb), calc(var(--size-tick) * 1.35));
-  --plot-axis-size: clamp(var(--size-body), min(1.1cqi, 1.8cqb), calc(var(--size-body) * 1.35));
-  --plot-tooltip-size: clamp(var(--size-tick), min(1.02cqi, 1.66cqb), calc(var(--size-body) * 1.35));
+     smallest type on the page to a size the reader cannot change.
+
+     In practice a wide, short panel is bound by `cqb`, so these sit on their
+     floors most of the time and the floor is the size you actually get. They
+     are set one role higher than the chrome for that reason: a plot is read at
+     arm's length as a picture, not scanned like a control strip, and axis type
+     that merely matches the toolbar reads as an afterthought inside it. */
+  --plot-title-size: clamp(var(--size-title), min(1.5cqi, 3.7cqb), 1.75rem);
+  --plot-subtitle-size: clamp(var(--size-body), min(1.05cqi, 2.6cqb), 1.25rem);
+  --plot-tick-size: clamp(var(--size-body), min(1.2cqi, 3cqb), 1.375rem);
+  --plot-axis-size: clamp(var(--size-title), min(1.35cqi, 3.4cqb), 1.5rem);
+  --plot-tooltip-size: clamp(var(--size-tick), min(1.1cqi, 2.8cqb), 1.25rem);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   width: 100%;
@@ -626,6 +934,10 @@ button:disabled {
   display: flex;
   min-width: 0;
   align-items: baseline;
+  /* Title hard left, unit hard right, the rule between them carrying the gap.
+     The two were adjacent-left before, which reads as a title and its
+     afterthought rather than as a labelled pane. */
+  justify-content: space-between;
   gap: 10px;
   padding: 9px 14px 3px;
   font-family: var(--plot-face);
@@ -684,6 +996,7 @@ button:disabled {
   padding-right: 7px;
   border-right: 1px solid var(--line);
   font-size: var(--size-tick);
+  letter-spacing: var(--track-small);
 }
 
 .series-key {
@@ -699,20 +1012,35 @@ button:disabled {
 
 .series-control > span {
   color: var(--ink-quiet);
-  font-family: var(--mono);
 }
 
+/* The legend names a series: both the variable identity and its datum are read
+   out of the file, so both are the data face. */
+.series-control > strong,
+.series-control > span {
+  font-family: var(--mono);
+  letter-spacing: normal;
+}
+
+/* Same job as a toolbar control label, so the same face and case. It was the
+   one control label left in the chrome face. */
 .series-control label {
   display: flex;
   align-items: center;
   gap: 3px;
   color: var(--ink-medium);
+  font-size: var(--size-micro);
+  font-weight: 400;
+  text-transform: uppercase;
+  font-family: var(--label-face);
+  letter-spacing: var(--track-caps);
 }
 
 .series-control input {
   width: 62px;
   padding: 0 4px;
   font-family: var(--mono);
+  letter-spacing: normal;
 }
 
 .series-control input[type="checkbox"] {
@@ -725,6 +1053,7 @@ button:disabled {
 .comparison-warning {
   color: var(--warn-ink);
   font-size: var(--size-tick);
+  letter-spacing: var(--track-small);
 }
 
 .comparison-line {
@@ -770,6 +1099,7 @@ button:disabled {
   padding: 0 8px;
   background: var(--panel);
   font-family: var(--mono);
+  letter-spacing: normal;
   font-size: var(--size-tick);
 }
 
@@ -826,6 +1156,7 @@ button:disabled {
   margin-top: 5px;
   color: var(--ink-quiet);
   font-family: var(--mono);
+  letter-spacing: normal;
 }
 
 .field-canvas {
@@ -896,21 +1227,9 @@ button:disabled {
   min-height: 24px;
   padding: 0 6px;
   background: var(--paper);
-  font-size: 0.625rem;
+  font-size: var(--size-micro);
+  letter-spacing: var(--track-small);
   font-weight: 650;
-}
-
-.mesh-location {
-  position: absolute;
-  top: 6px;
-  left: 122px;
-  padding: 3px 6px;
-  border: 1px solid var(--line);
-  background: var(--raised);
-  color: var(--ink-medium);
-  font-family: var(--mono);
-  font-size: 9px;
-  text-transform: uppercase;
 }
 
 .mesh-warning {
@@ -991,7 +1310,7 @@ button:disabled {
    would drift the moment a colormap changed. */
 .colorbar-axis {
   font-family: var(--plot-face);
-  font-size: calc(var(--plot-tick-size) * 0.88);
+  font-size: calc(var(--plot-tick-size) * 0.95);
   fill: var(--ink-medium);
 }
 
@@ -1023,7 +1342,7 @@ button:disabled {
   gap: 4px;
   padding: 9px 11px;
   border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--raised);
   font-family: var(--plot-face);
   font-size: var(--plot-tooltip-size);
@@ -1045,7 +1364,8 @@ button:disabled {
   border: 1px solid var(--line);
   background: var(--raised);
   color: var(--ink-medium);
-  font-size: 10px;
+  font-size: var(--size-tick);
+  letter-spacing: var(--track-small);
 }
 
 .plot-error {
@@ -1082,19 +1402,22 @@ button:disabled {
   fill: var(--ink);
 }
 
-.time-hour {
-  font-size: calc(var(--plot-tick-size) * 0.92);
+/* The fishbone is an axis, so it is set like one: the primary tick label
+   matches the plot's own tick size rather than shrinking below it, and a time
+   sits one step down when a multi-day axis needs both date and time. */
+.time-hour,
+.time-secondary {
+  font-size: var(--plot-tick-size);
   fill: var(--ink-medium);
 }
 
-.time-day,
-.time-month {
+.time-day {
   font-weight: 700;
   fill: var(--ink);
 }
 
-.time-month {
-  font-size: calc(var(--plot-tick-size) * 0.86);
+.time-secondary {
+  font-size: calc(var(--plot-tick-size) * 0.92);
 }
 
 .metadata-panel {
@@ -1115,13 +1438,16 @@ button:disabled {
 
 .metadata-panel h2 {
   font-family: var(--mono);
-  font-size: 16px;
+  letter-spacing: normal;
+  font-size: var(--size-title);
+  line-height: var(--line-height-tight);
 }
 
 .metadata-panel h3 {
-  font-size: 12px;
+  font-size: var(--size-tick);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  font-family: var(--label-face);
+  letter-spacing: var(--track-caps);
 }
 
 .metadata-summary {
@@ -1143,19 +1469,25 @@ button:disabled {
 .metadata-summary dt {
   margin-bottom: 3px;
   color: var(--ink-quiet);
-  font-size: 9px;
-  font-weight: 700;
+  font-size: var(--size-micro);
+  letter-spacing: var(--track-small);
+  font-weight: 400;
   text-transform: uppercase;
+  font-family: var(--label-face);
+  letter-spacing: var(--track-caps);
 }
 
 .metadata-summary dd {
   margin: 0;
+  font-family: var(--mono);
+  letter-spacing: normal;
 }
 
 .metadata-panel table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--size-tick);
+  letter-spacing: var(--track-small);
 }
 
 .metadata-panel th,
@@ -1168,14 +1500,27 @@ button:disabled {
 
 .metadata-panel thead th {
   background: var(--panel);
-  font-size: 9px;
+  font-size: var(--size-micro);
+  letter-spacing: var(--track-small);
   text-transform: uppercase;
+  font-family: var(--label-face);
+  letter-spacing: var(--track-caps);
+}
+
+/* Every cell in these tables is read out of the file -- names, dtypes, lengths,
+   scopes, attribute values -- so all of it is data and all of it is the data
+   face. Only the first two columns were, which left attribute values and
+   dimension scopes set in the chrome face: proportional, non-aligning, and a
+   third face in one panel. */
+.metadata-panel tbody th,
+.metadata-panel tbody td {
+  font-family: var(--mono);
+  letter-spacing: normal;
 }
 
 .metadata-panel tbody th,
-.metadata-panel td:nth-child(2) {
+.metadata-panel tbody td:first-of-type {
   width: 150px;
-  font-family: var(--mono);
   font-weight: 500;
 }
 
@@ -1190,7 +1535,7 @@ button:disabled {
 
 .timeline {
   display: grid;
-  grid-template-columns: auto auto minmax(120px, 1fr) minmax(92px, auto);
+  grid-template-columns: auto auto minmax(120px, 1fr);
   align-items: center;
   gap: 10px;
   padding: 6px 10px;
@@ -1207,7 +1552,34 @@ button:disabled {
   width: 29px;
   height: 28px;
   padding: 0;
-  font-size: 10px;
+  font-size: var(--size-tick);
+  letter-spacing: var(--track-small);
+}
+
+.playback button::before {
+  content: "";
+  display: block;
+  width: 10px;
+  height: 10px;
+  margin: 0 auto;
+  background: currentColor;
+}
+
+/* Stop is the unclipped box, so it needs no rule of its own. */
+.playback .to-start::before {
+  clip-path: polygon(0 0, 25% 0, 25% 44%, 100% 0, 100% 100%, 25% 56%, 25% 100%, 0 100%);
+}
+
+.playback .back::before {
+  clip-path: polygon(100% 0, 100% 100%, 0 50%);
+}
+
+.playback .forward::before {
+  clip-path: polygon(0 0, 0 100%, 100% 50%);
+}
+
+.playback .to-end::before {
+  clip-path: polygon(100% 0, 75% 0, 75% 44%, 0 0, 0 100%, 75% 56%, 75% 100%, 100% 100%);
 }
 
 .playback button[aria-pressed="true"] {
@@ -1217,8 +1589,11 @@ button:disabled {
 }
 
 .timeline strong {
-  font-size: 10px;
+  font-size: var(--size-tick);
+  letter-spacing: var(--track-small);
   text-transform: uppercase;
+  font-family: var(--label-face);
+  letter-spacing: var(--track-caps);
 }
 
 .timeline-track {
@@ -1242,7 +1617,7 @@ button:disabled {
   top: 24px;
   right: 8px;
   left: 8px;
-  height: 24px;
+  height: 34px;
   border-top: 1px solid var(--ink-weak);
   font-family: var(--plot-face);
   pointer-events: none;
@@ -1263,44 +1638,30 @@ button:disabled {
   background: var(--ink-weak);
 }
 
+.timeline-zone {
+  color: var(--ink-quiet);
+  /* A zone is a data value, not part of the uppercase TIME label. National
+     Park at the tick size was the last unhinted small text in this strip. */
+  font-family: var(--mono);
+  letter-spacing: normal;
+  font-weight: 400;
+  text-transform: none;
+}
+
 .timeline-fishbone b {
   margin-top: 1px;
-  font-size: 9px;
+  font-size: var(--size-tick);
+  letter-spacing: var(--track-small);
   font-style: normal;
   line-height: 1;
 }
 
 .timeline-fishbone em {
   margin-top: 1px;
-  font-size: 8px;
+  font-size: var(--size-micro);
+  letter-spacing: var(--track-small);
   font-style: normal;
   line-height: 1;
-}
-
-.timeline-axis-title {
-  position: absolute;
-  right: 0;
-  bottom: -1px;
-  left: 0;
-  color: var(--ink);
-  font-family: var(--plot-face);
-  font-size: 9px;
-  font-weight: 700;
-  text-align: center;
-}
-
-.timeline output {
-  font-family: var(--mono);
-  font-size: 10px;
-  white-space: nowrap;
-}
-
-.timeline output {
-  min-width: 76px;
-  color: var(--ink-medium);
-  font-family: var(--mono);
-  font-size: 10px;
-  text-align: right;
 }
 
 .statusbar {
@@ -1312,11 +1673,15 @@ button:disabled {
   gap: 14px;
   min-width: 0;
   padding: 0 10px;
-  border-top: 1px solid var(--line);
-  background: var(--panel);
-  color: var(--ink-medium);
+  /* The one dark strip, and the only one: it reports the machine's own state
+     continuously rather than offering an action. A second plate surface would
+     make it a theme instead of a signal. */
+  border-top: 1px solid var(--ink);
+  background: var(--plate);
+  color: var(--plate-quiet);
   font-family: var(--mono);
-  font-size: 9.5px;
+  letter-spacing: normal;
+  font-size: var(--size-micro);
 }
 
 .statusbar span {
@@ -1327,7 +1692,7 @@ button:disabled {
 }
 
 .statusbar span:nth-child(2) {
-  color: var(--ink);
+  color: var(--plate-text);
   text-align: center;
 }
 
@@ -1370,10 +1735,6 @@ button:disabled {
     grid-column: 2;
   }
 
-  .read-only {
-    display: none;
-  }
-
   .statusbar {
     grid-template-columns: minmax(0, 1fr) auto;
   }
@@ -1388,6 +1749,10 @@ button:disabled {
    that a fingertip actually covers. Only the targets grow -- type, spacing and
    stroke are the same style at any pointer. */
 @media (pointer: coarse) {
+  :root {
+    --topbar-height: 44px;
+  }
+
   button,
   select,
   input[type="search"],
@@ -1424,4 +1789,51 @@ button:disabled {
   .view-tabs button.active::after {
     background: Highlight;
   }
+}
+
+/* ---------------------------------------------------------------------------
+   Running text
+   ------------------------------------------------------------------------ */
+
+/* The measure. Anything set as sentences rather than labels gets capped here:
+   36em is roughly 60 characters at body size, inside the 45-75 the eye tracks
+   without losing its place on the return sweep. The viewer has little prose --
+   error explanations, the empty state, attribute values in the metadata panel
+   -- and all of it is the kind that gets read once, carefully. */
+.prose,
+.warnings p,
+.collection-error,
+.plot-error p,
+.metadata-panel td {
+  max-width: 36em;
+  line-height: var(--line-height);
+  letter-spacing: var(--track-body);
+}
+
+/* ---------------------------------------------------------------------------
+   Emphasis without a second family
+
+   Gorton Perfected ships seven weights and no italic. `<strong>` therefore has
+   a real weight to reach for; `<em>` does not, so it takes the tracking the
+   German trade used for the same reason before italic was available on a
+   Fraktur bed -- s p e r r s a t z. It is quieter than italic and it costs no
+   font. Data values in `<em>` stay monospaced and take no tracking, since
+   there the alignment is the meaning.
+   ------------------------------------------------------------------------ */
+strong,
+b {
+  font-weight: 600;
+}
+
+em,
+i {
+  font-style: normal;
+  letter-spacing: 0.06em;
+}
+
+em code,
+i code,
+em .value,
+i .value {
+  letter-spacing: normal;
 }

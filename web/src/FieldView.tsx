@@ -19,8 +19,9 @@ import { displayUnit, quantityLabel } from "./model";
 import { formatPosition, probeAtPosition } from "./projection";
 import { fieldRequest, type DisplayDimensions } from "./selection";
 import { useElementSize } from "./useElementSize";
+import { plotMargin, plotType, type PlotType } from "./plotgeom";
 import { MapOverlay } from "./MapOverlay";
-import { COLORBAR_WIDTH, Colorbar, PlotAxes, ViewControls } from "./plot";
+import { Colorbar, PlotAxes, ViewControls, colorbarWidth } from "./plot";
 import {
   aspectRectangle,
   boxZoomBounds,
@@ -31,7 +32,11 @@ import {
   type ViewRectangle,
 } from "./view";
 
-export const MARGIN = { top: 36, right: 14 + COLORBAR_WIDTH, bottom: 52, left: 68 };
+/** Furniture margin for a field panel, derived from the live type size rather
+ *  than fixed: the labels grow with the panel, and so must the room for them. */
+export function fieldMargin(type: PlotType) {
+  return plotMargin(type, { colorbar: 14 + colorbarWidth(type) });
+}
 
 interface FieldViewProps {
   metadata: Metadata;
@@ -108,11 +113,13 @@ export function FieldView(props: FieldViewProps) {
     props.controlledView?.maximumY,
   ]);
 
+  const type = plotType(frame.current);
+  const margin = fieldMargin(type);
   const availablePlot = {
-    left: MARGIN.left,
-    top: MARGIN.top,
-    width: Math.max(1, frameSize.width - MARGIN.left - MARGIN.right),
-    height: Math.max(1, frameSize.height - MARGIN.top - MARGIN.bottom),
+    left: margin.left,
+    top: margin.top,
+    width: Math.max(1, frameSize.width - margin.left - margin.right),
+    height: Math.max(1, frameSize.height - margin.top - margin.bottom),
   };
   const request = useMemo(
     () => {
@@ -406,6 +413,7 @@ export function FieldView(props: FieldViewProps) {
           />
           <svg className="plot-svg" width={frameSize.width} height={frameSize.height} aria-hidden="true">
             <PlotAxes
+              type={type}
               plot={plot}
               xDomain={xDomain}
               yDomain={yDomain}
@@ -414,6 +422,7 @@ export function FieldView(props: FieldViewProps) {
               boxed
             />
             <Colorbar
+              type={type}
               plot={plot}
               range={props.range}
               colormap={props.colormap}

@@ -99,7 +99,15 @@ class MeshRenderer implements MeshSurface {
   private uploadedColormap: ColormapChoice | undefined;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
-    const gl = canvas.getContext("webgl2", { alpha: false, antialias: true });
+    // `preserveDrawingBuffer` so the mesh can be read back after it is drawn.
+    // Without it the compositor is free to clear the buffer as soon as it has
+    // presented the frame, and `toDataURL` for the PNG export returns a blank
+    // rectangle -- which is exactly what it did.
+    const gl = canvas.getContext("webgl2", {
+      alpha: false,
+      antialias: true,
+      preserveDrawingBuffer: true,
+    });
     if (!gl) throw new Error("This browser does not provide WebGL2");
     this.gl = gl;
     this.program = createProgram(gl, VERTEX_SHADER, FRAGMENT_SHADER);

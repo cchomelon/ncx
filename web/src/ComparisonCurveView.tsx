@@ -8,6 +8,7 @@ import { attributeText, displayUnit, quantityLabel, variableLabel } from "./mode
 import { curveRequest, defaultCurveDimension, defaultIndices } from "./selection";
 import { describeTime, timeInZone, type DisplayTimeZone, type TimeDescription } from "./time";
 import { useElementSize } from "./useElementSize";
+import { plotType } from "./plotgeom";
 
 const SERIES_COLORS = ["#011959", "#B58E30", "#4D734D", "#114160", "#747E38", "#1E5D62"];
 const SERIES_DASHES = ["none", "7 3", "2 2", "9 3 2 3", "12 3", "2 3 8 3"];
@@ -136,7 +137,7 @@ export function ComparisonCurveView({
   const domain = useMemo(() => sharedCurveDomain(adjusted), [adjusted]);
   const geometries = adjusted.map((item) => ({
     item,
-    geometry: domain ? curveGeometry(item.y, item.x, size.width, size.height, domain) : undefined,
+    geometry: domain ? curveGeometry(item.y, item.x, size.width, size.height, domain, plotType(frame.current)) : undefined,
   }));
   const time: TimeDescription | undefined = adjusted[0]?.absoluteTime
     ? timeInZone({ multiplierMs: 1, originMs: 0, offsetMinutes: 0, zoneLabel: "UTC" }, timeZone)

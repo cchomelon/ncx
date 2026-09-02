@@ -10,8 +10,8 @@ export interface TimeDescription {
 
 export interface TimeTickLabel {
   primary: string;
+  secondary?: string;
   day?: boolean;
-  month?: string;
 }
 
 export interface DisplayTimeZone {
@@ -94,18 +94,23 @@ export function describeTime(variable: Variable | undefined): TimeDescription | 
   };
 }
 
-export function timeTickLabel(value: number, time: TimeDescription): TimeTickLabel {
+export function timeTickLabel(
+  value: number,
+  time: TimeDescription,
+  axisSpan: number,
+): TimeTickLabel {
   const date = localDate(value, time);
-  const hour = date.getUTCHours();
-  return hour === 0
-    ? {
-        primary: String(date.getUTCDate()).padStart(2, "0"),
-        month: date
-          .toLocaleString("en", { month: "short", timeZone: "UTC" })
-          .toUpperCase(),
-        day: true,
-      }
-    : { primary: String(hour).padStart(2, "0") };
+  const hour = twoDigits(date.getUTCHours());
+  const minute = date.getUTCMinutes();
+  const clock = `${hour}${minute ? `:${twoDigits(minute)}` : ""}${time.zoneLabel === "UTC" ? "Z" : ""}`;
+  if (Math.abs(axisSpan * time.multiplierMs) < 86_400_000) return { primary: clock };
+  const day = twoDigits(date.getUTCDate());
+  const month = date.toLocaleString("en", { month: "short", timeZone: "UTC" });
+  return {
+    primary: `${day} ${month}`,
+    secondary: minute === 0 && hour === "00" ? undefined : clock,
+    day: true,
+  };
 }
 
 export function formatTimestamp(value: number, time: TimeDescription): string {

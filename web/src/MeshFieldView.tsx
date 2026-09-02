@@ -4,7 +4,8 @@ import { LatestSliceLoader, fetchStaticSlice } from "./api";
 import { finiteRange, formatNumber, type ColorRange,
   type ColormapChoice,
 } from "./color";
-import { MARGIN } from "./FieldView";
+import { fieldMargin } from "./FieldView";
+import { plotType } from "./plotgeom";
 import { Colorbar, PlotAxes, ViewControls, type PlotBounds } from "./plot";
 import { MapOverlay } from "./MapOverlay";
 import {
@@ -125,11 +126,13 @@ export function MeshFieldView(props: MeshFieldViewProps) {
       props.onStatus(message);
     }
   }, [props.onStatus]);
+  const type = plotType(frame.current);
+  const margin = fieldMargin(type);
   const availablePlot: PlotBounds = {
-    left: MARGIN.left,
-    top: MARGIN.top,
-    width: Math.max(1, size.width - MARGIN.left - MARGIN.right),
-    height: Math.max(1, size.height - MARGIN.top - MARGIN.bottom),
+    left: margin.left,
+    top: margin.top,
+    width: Math.max(1, size.width - margin.left - margin.right),
+    height: Math.max(1, size.height - margin.top - margin.bottom),
   };
 
   const hint = props.variable.view_hint;
@@ -411,6 +414,7 @@ export function MeshFieldView(props: MeshFieldViewProps) {
       />
       <svg className="plot-svg" width={size.width} height={size.height} aria-hidden="true">
         <PlotAxes
+          type={type}
           plot={plot}
           xDomain={view ? [view.minimumX, view.maximumX] : [0, 1]}
           yDomain={view ? [view.minimumY, view.maximumY] : [0, 1]}
@@ -419,6 +423,7 @@ export function MeshFieldView(props: MeshFieldViewProps) {
           boxed
         />
         <Colorbar
+          type={type}
           plot={plot}
           range={activeRange}
           colormap={props.colormap}
@@ -454,7 +459,6 @@ export function MeshFieldView(props: MeshFieldViewProps) {
           <MapOverlay bounds={view} width={plot.width} height={plot.height} />
         </div>
       )}
-      {hint.kind === "ugrid2d" && <span className="mesh-location">UGRID {hint.location}</span>}
       {hover && (
         <output
           className="plot-tooltip"

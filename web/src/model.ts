@@ -249,6 +249,18 @@ export function meshGeometryPaths(metadata: Metadata): Set<string> {
         if (reference) paths.add(resolveVariableReference(topology.path, reference));
       }
     }
+    const parent = topology.path.slice(0, topology.path.lastIndexOf("/"));
+    for (const variable of metadata.variables) {
+      // Some UGRID writers omit helper references but keep the topology-name
+      // prefix. A declared `mesh` attribute still identifies a real data field.
+      if (
+        variable.path.slice(0, variable.path.lastIndexOf("/")) === parent &&
+        variable.name.startsWith(`${topology.name}_`) &&
+        attributeText(variable, "mesh") === undefined
+      ) {
+        paths.add(variable.path);
+      }
+    }
   }
   for (const variable of metadata.variables) {
     const role = attributeText(variable, "cf_role") ?? "";

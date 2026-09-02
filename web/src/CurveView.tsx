@@ -22,8 +22,12 @@ import {
   type TimeTickLabel,
 } from "./time";
 import { useElementSize } from "./useElementSize";
+import { DEFAULT_TYPE, TICK, axisOffsets, plotMargin, plotType, widestLabel, type PlotType } from "./plotgeom";
 
-const MARGIN = { top: 20, right: 28, bottom: 68, left: 70 };
+/** A multi-day time axis stacks the time under the date, so reserve two label rows. */
+function curveMargin(type: PlotType) {
+  return plotMargin(type, { colorbar: 28, top: Math.round(type.axis * 1.25), xRows: 2 });
+}
 const MODEL_COLOR = "var(--ink)";
 const REFERENCE_COLOR = "#B58E30";
 const REFERENCE_DASH = "7 3";
@@ -236,6 +240,7 @@ export function CurveView(props: CurveViewProps) {
       size.width,
       size.height,
       domain,
+      plotType(frame.current),
     ),
     [displayedValues, displayedX, domain, size],
   );
@@ -246,6 +251,7 @@ export function CurveView(props: CurveViewProps) {
       size.width,
       size.height,
       domain,
+      plotType(frame.current),
     ),
     [comparisonValues, comparisonX, domain, size],
   );
@@ -445,6 +451,7 @@ export function curveGeometry(
   width: number,
   height: number,
   fixedDomain?: CurveDomain,
+  type: PlotType = DEFAULT_TYPE,
 ) {
   if (!values?.length) return undefined;
   const xValues = coordinate?.length === values.length
@@ -478,11 +485,12 @@ export function curveGeometry(
     xMaximum += 0.5;
   }
   if (fixedDomain) ({ xMinimum, xMaximum, yMinimum, yMaximum } = fixedDomain);
+  const margin = curveMargin(type);
   const plot = {
-    left: MARGIN.left,
-    top: MARGIN.top,
-    width: Math.max(1, width - MARGIN.left - MARGIN.right),
-    height: Math.max(1, height - MARGIN.top - MARGIN.bottom),
+    left: margin.left,
+    top: margin.top,
+    width: Math.max(1, width - margin.left - margin.right),
+    height: Math.max(1, height - margin.top - margin.bottom),
   };
   const xFor = (index: number) =>
     plot.left + ((xValues[index] - xMinimum) / (xMaximum - xMinimum)) * plot.width;
@@ -507,6 +515,7 @@ export function curveGeometry(
     yMinimum,
     yMaximum,
     plot,
+    type,
     xFor,
     yFor,
     path,
@@ -557,7 +566,8 @@ export function CurveAxes({
 }) {
   const { plot } = geometry;
   const bottom = plot.top + plot.height;
-  // A time axis keeps evenly spaced samples so day and month rows stay legible;
+  const type = geometry.type ?? DEFAULT_TYPE;
+  // A time axis keeps evenly spaced samples so date and time rows stay legible;
   // a numeric axis snaps to round values like every other axis in the app.
   const xTicks = time
     ? [0, 0.25, 0.5, 0.75, 1].map(
@@ -574,6 +584,7 @@ export function CurveAxes({
   const ySpan = geometry.yMaximum - geometry.yMinimum;
   const yAt = (value: number) =>
     plot.top + (1 - (ySpan === 0 ? 0.5 : (value - geometry.yMinimum) / ySpan)) * plot.height;
+  const offset = axisOffsets(type, widestLabel(y.values, y.format), time ? 2 : 1);
   return (
     <g
       className="plot-axis curve-axis"
@@ -594,22 +605,22 @@ export function CurveAxes({
       {xTicks.map((value, index) => {
         const x = xAt(value);
         const label: TimeTickLabel = time
-          ? timeTickLabel(value, time)
+          ? timeTickLabel(value, time, xSpan)
           : { primary: xFormat!(value) };
         return (
           <g key={`x-${time ? index : value}`}>
-            <line x1={x} x2={x} y1={bottom} y2={bottom + 6} />
+            <line x1={x} x2={x} y1={bottom} y2={bottom + TICK} />
             <text
               className={label.day ? "time-day" : "time-hour"}
               x={x}
-              y={bottom + (label.day ? 24 : 17)}
+              y={bottom + offset.xRow(0)}
               textAnchor="middle"
             >
               {label.primary}
             </text>
-            {label.month && (
-              <text className="time-month" x={x} y={bottom + 39} textAnchor="middle">
-                {label.month}
+            {label.secondary && (
+              <text className="time-secondary" x={x} y={bottom + offset.xRow(1)} textAnchor="middle">
+                {label.secondary}
               </text>
             )}
           </g>
@@ -617,16 +628,25 @@ export function CurveAxes({
       })}
       {y.values.map((value) => (
         <g key={`y-${value}`}>
-          <line x1={plot.left - 5} x2={plot.left} y1={yAt(value)} y2={yAt(value)} />
-          <text x={plot.left - 9} y={yAt(value) + 4} textAnchor="end">{y.format(value)}</text>
+          <line x1={plot.left - TICK} x2={plot.left} y1={yAt(value)} y2={yAt(value)} />
+          <text x={plot.left - offset.yLabel} y={yAt(value)} dy="0.32em" textAnchor="end">
+            {y.format(value)}
+          </text>
         </g>
       ))}
-      <text className="axis-label" x={plot.left + plot.width / 2} y={bottom + 57} textAnchor="middle">
+      <text
+        className="axis-label"
+        x={plot.left + plot.width / 2}
+        y={bottom + offset.xTitle}
+        dy="0.32em"
+        textAnchor="middle"
+      >
         {time ? `Time (${time.zoneLabel}${timeNote ? `; ${timeNote}` : ""})` : dimension}
       </text>
       <text
         className="axis-label"
-        transform={`translate(18 ${plot.top + plot.height / 2}) rotate(-90)`}
+        transform={`translate(${plot.left - offset.yTitle} ${plot.top + plot.height / 2}) rotate(-90)`}
+        dy="0.32em"
         textAnchor="middle"
       >
         {valueLabel}

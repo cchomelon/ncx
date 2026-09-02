@@ -77,6 +77,15 @@ const failures = [];
 try {
   window.__ncxStep = "initial field";
   const shell = await waitFor(() => document.querySelector(".shell"), "application shell did not mount");
+  const topbar = shell.querySelector(".topbar");
+  const topbarBounds = topbar.getBoundingClientRect();
+  if (Math.abs(topbarBounds.height - 32) > 0.1 || Math.abs(topbarBounds.width - document.documentElement.clientWidth) > 0.1) {
+    failures.push("topbar is not full-width by 32 px");
+  }
+  const menuMark = getComputedStyle(topbar.querySelector(".sidebar-toggle"), "::before");
+  if (menuMark.backgroundImage !== "none" || menuMark.height !== "1.5px" || menuMark.boxShadow === "none") {
+    failures.push("sidebar toggle is not three equal 1.5 px solid strokes");
+  }
   if (browserMode !== "station") {
     const legacy = await waitFor(
       () => document.querySelector('optgroup[label="ncview legacy"]'),
@@ -375,11 +384,11 @@ try {
       window.__ncxStep = "UGRID face field";
       [...document.querySelectorAll(".variable-row")]
         .find((button) => button.textContent.includes("face_depth"))?.click();
-      await waitFor(() => document.querySelector(".mesh-location")?.textContent.includes("face") && document.querySelector(".mesh-canvas[data-rendered='true']"), "UGRID face field did not render");
+      await waitFor(() => document.querySelector(".mesh-canvas[data-rendered='true']")?.getAttribute("aria-label")?.includes("face_depth"), "UGRID face field did not render");
       window.__ncxStep = "UGRID edge field";
       [...document.querySelectorAll(".variable-row")]
         .find((button) => button.textContent.includes("edge_current"))?.click();
-      await waitFor(() => document.querySelector(".mesh-location")?.textContent.includes("edge") && document.querySelector(".mesh-canvas[data-rendered='true']"), "UGRID edge field did not render");
+      await waitFor(() => document.querySelector(".mesh-canvas[data-rendered='true']")?.getAttribute("aria-label")?.includes("edge_current"), "UGRID edge field did not render");
       const edgeCanvas = document.querySelector(".mesh-canvas");
       const edgeBounds = edgeCanvas.getBoundingClientRect();
       for (const type of ["pointerdown", "pointerup"]) {
@@ -405,10 +414,21 @@ try {
   }, "field slice did not render");
   if (!document.querySelector(".path")?.textContent.includes("rectilinear.nc")) failures.push("dataset identity is missing");
   if (!document.querySelector(".statusbar")?.textContent.includes("dim(")) failures.push("status shape does not identify display dimensions");
-  await waitFor(() => document.querySelector(".figure-head h1")?.textContent === "2024-07-25 18:00 HKT", "field title did not use valid CF time");
+  await waitFor(() => document.querySelector(".figure-head h1")?.textContent === "2024-07-25 00:00 HKT", "field did not open at the first valid CF time");
   if (!document.querySelector(".figure-head span")?.textContent.includes("Potential temperature")) failures.push("field subtitle lost the variable label");
+  const variableRows = [...document.querySelectorAll(".variable-row span")];
+  const variableSearch = document.querySelector(".variable-search");
+  if (variableSearch?.placeholder !== "Filter variables (" + variableRows.length + " variables)") failures.push("variable count did not move into the filter placeholder");
+  if (!getComputedStyle(variableSearch).fontFamily.includes("Commit Mono")) failures.push("variable filter did not use Commit Mono");
+  const variableNameSize = getComputedStyle(variableRows[0]).fontSize;
+  if (variableNameSize !== "12.5px") failures.push("variable names are not 12.5 px (got " + variableNameSize + ")");
+  if (document.querySelector(".dataset-head")) failures.push("single-dataset variable count still occupies its own row");
+  if (document.querySelector(".timeline output")) failures.push("timeline retained its redundant output");
   if (![...document.querySelectorAll(".timeline-fishbone b")].some((label) => label.textContent === "18")) failures.push("timeline fishbone did not show two-digit hours");
-  if (document.querySelector(".timeline-axis-title")?.textContent !== "Time (HKT)") failures.push("timeline axis title did not show timezone");
+  // The zone rides with the dimension name in the timeline's own label. It
+  // used to be a separate centred title under the track, which collided with
+  // whatever tick sat at the middle -- a month label, most often.
+  if (document.querySelector(".timeline-zone")?.textContent !== " (HKT)") failures.push("timeline label did not show timezone");
 
   const context = canvas.getContext("2d");
   const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
@@ -518,8 +538,10 @@ try {
 
   window.__ncxStep = "playback";
   window.__ncxMaxScalarReads = window.__ncxScalarReads;
+  const timelineRange = document.querySelector('.timeline input[type="range"]');
+  const initialFrame = timelineRange.value;
   document.querySelector('button[title="Play forward"]').click();
-  await waitFor(() => document.querySelector(".timeline output")?.textContent.includes("00:00"), "frame-paced playback did not advance");
+  await waitFor(() => timelineRange.value !== initialFrame, "frame-paced playback did not advance");
   document.querySelector('button[title="Stop"]').click();
   if (window.__ncxMaxScalarReads > 1) failures.push("animation overlapped scalar reads");
 

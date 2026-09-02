@@ -5,6 +5,7 @@ import { comparisonAvailable } from "./comparison";
 import { ComparisonCurveView } from "./ComparisonCurveView";
 import { ComparisonFieldView } from "./ComparisonFieldView";
 import { CurveView } from "./CurveView";
+import { exportPlotPng } from "./export";
 import { FieldView } from "./FieldView";
 import { MeshFieldView } from "./MeshFieldView";
 import { MetadataPanel } from "./MetadataPanel";
@@ -141,10 +142,6 @@ export function App() {
   useEffect(() => {
     if (!metadata || !variable) return;
     const nextIndices = defaultIndices(variable);
-    for (const dimension of variable.dimensions) {
-      const discovered = metadata.dimensions.find((candidate) => candidate.path === dimension.path);
-      if (discovered?.unlimited) nextIndices[dimension.path] = Math.max(0, dimension.length - 1);
-    }
     const nextDisplay = defaultDisplayDimensions(variable);
     const hint = variable.view_hint;
     if (hint.kind === "ugrid2d" && hint.location === "edge") {
@@ -342,9 +339,7 @@ export function App() {
           aria-label="Toggle dataset browser"
           aria-expanded={sidebarOpen}
           onClick={() => setSidebarOpen((open) => !open)}
-        >
-          ☰
-        </button>
+        />
         <strong className="brand">ncx</strong>
         {datasets.length > 1 && !collection && (
           <label className="dataset-switcher">
@@ -357,7 +352,6 @@ export function App() {
           </label>
         )}
         <span className="path"><b>{metadata.dataset.name}</b><i>/</i>{variable.path.slice(1)}</span>
-        <span className="read-only">READ ONLY</span>
       </header>
 
       {collection ? (
@@ -614,7 +608,7 @@ export function App() {
               className="screenshot-button"
               title="Save plot as PNG"
               disabled={view === "metadata"}
-              onClick={() => void savePlotScreenshot(variable.name).catch((error: unknown) => {
+              onClick={() => void exportPlotPng(variable.name).catch((error: unknown) => {
                 updateStatus(error instanceof Error ? error.message : String(error));
               })}
             >
@@ -760,15 +754,11 @@ function DatasetBrowser({
   const visibleCount = countVisible(metadata, supportingPaths, showSupporting, selectedPath);
   return (
     <aside className="sidebar">
-      <div className="dataset-head">
-        <strong>{metadata.dataset.name}</strong>
-        <span>{visibleCount} variables</span>
-      </div>
       <div className="variable-filter">
         <input
           className="variable-search"
           type="search"
-          placeholder="Filter variables"
+          placeholder={`Filter variables (${visibleCount} variables)`}
           value={search}
           onChange={(event) => onSearch(event.target.value)}
         />
@@ -869,9 +859,8 @@ function CollectionBrowser({
     0,
   );
   return (
-    <aside className="sidebar">
+    <aside className="sidebar collection-sidebar">
       <div className="dataset-head">
-        <strong>NetCDF collection</strong>
         <span>{datasets.length} files</span>
       </div>
       <div className="variable-filter">
@@ -1060,19 +1049,28 @@ function Timeline({
   if (!timeline) return null;
   const last = Math.max(0, timeline.dimension.length - 1);
   const ticks = time && values ? timelineTickIndices(values.length) : [];
+  const axisSpan = values && values.length > 1 ? values[values.length - 1] - values[0] : 0;
+  const valueText = time && values?.[value] !== undefined
+    ? formatTimestamp(values[value], time)
+    : `${value} of ${last}`;
   return (
     <div className="timeline">
       <div className="playback" aria-label="Dimension playback">
-        <button title="First sample" onClick={() => { onPlay(0); onChange(0); }}>│◀</button>
-        <button title="Play backward" aria-pressed={playing === -1} onClick={() => onPlay(-1)}>◀</button>
-        <button title="Stop" aria-pressed={playing === 0} onClick={() => onPlay(0)}>■</button>
-        <button title="Play forward" aria-pressed={playing === 1} onClick={() => onPlay(1)}>▶</button>
-        <button title="Last sample" onClick={() => { onPlay(0); onChange(last); }}>▶│</button>
+        <button className="to-start" title="First sample" aria-label="First sample" onClick={() => { onPlay(0); onChange(0); }} />
+        <button className="back" title="Play backward" aria-label="Play backward" aria-pressed={playing === -1} onClick={() => onPlay(-1)} />
+        <button className="stop" title="Stop" aria-label="Stop" aria-pressed={playing === 0} onClick={() => onPlay(0)} />
+        <button className="forward" title="Play forward" aria-label="Play forward" aria-pressed={playing === 1} onClick={() => onPlay(1)} />
+        <button className="to-end" title="Last sample" aria-label="Last sample" onClick={() => { onPlay(0); onChange(last); }} />
       </div>
-      <strong>{timeline.dimension.name}</strong>
+      <strong>
+        {timeline.dimension.name}
+        {time && <span className="timeline-zone"> ({time.zoneLabel})</span>}
+      </strong>
       <div className="timeline-track">
         <input
           type="range"
+          aria-label={`${timeline.dimension.name} sample`}
+          aria-valuetext={valueText}
           min={0}
           max={last}
           value={value}
@@ -1081,24 +1079,18 @@ function Timeline({
         {ticks.length > 0 && (
           <div className="timeline-fishbone" aria-hidden="true">
             {ticks.map((index) => {
-              const label = timeTickLabel(values![index], time!);
+              const label = timeTickLabel(values![index], time!, axisSpan);
               return (
                 <span key={index} style={{ left: `${last ? (index / last) * 100 : 0}%` }}>
                   <i />
                   <b className={label.day ? "time-day" : "time-hour"}>{label.primary}</b>
-                  {label.month && <em className="time-month">{label.month}</em>}
+                  {label.secondary && <em className="time-secondary">{label.secondary}</em>}
                 </span>
               );
             })}
           </div>
         )}
-        {time && <small className="timeline-axis-title">Time ({time.zoneLabel})</small>}
       </div>
-      <output>
-        {time && values?.[value] !== undefined
-          ? formatTimestamp(values[value], time)
-          : `${value} / ${last}`}
-      </output>
     </div>
   );
 }
@@ -1235,43 +1227,3 @@ function hasGeographicCoordinates(metadata: Metadata, variable: Variable): boole
   );
 }
 
-async function savePlotScreenshot(name: string): Promise<void> {
-  const sourceCanvas = document.querySelector<HTMLCanvasElement>(".field-canvas, .mesh-canvas");
-  const sourceSvg = document.querySelector<SVGSVGElement>(".curve-svg");
-  if (!sourceCanvas && !sourceSvg) throw new Error("The current view has no plot to save");
-
-  const bounds = (sourceCanvas ?? sourceSvg!).getBoundingClientRect();
-  const ratio = Math.min(2, window.devicePixelRatio || 1);
-  const output = document.createElement("canvas");
-  output.width = Math.max(1, Math.round(bounds.width * ratio));
-  output.height = Math.max(1, Math.round(bounds.height * ratio));
-  const context = output.getContext("2d", { alpha: false });
-  if (!context) throw new Error("The browser could not create a screenshot canvas");
-  context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, output.width, output.height);
-
-  if (sourceCanvas) {
-    context.drawImage(sourceCanvas, 0, 0, output.width, output.height);
-  } else if (sourceSvg) {
-    const blob = new Blob([new XMLSerializer().serializeToString(sourceSvg)], { type: "image/svg+xml" });
-    const url = URL.createObjectURL(blob);
-    try {
-      const image = new Image();
-      image.src = url;
-      await image.decode();
-      context.drawImage(image, 0, 0, output.width, output.height);
-    } finally {
-      URL.revokeObjectURL(url);
-    }
-  }
-
-  const png = await new Promise<Blob>((resolve, reject) => {
-    output.toBlob((blob) => blob ? resolve(blob) : reject(new Error("PNG export failed")), "image/png");
-  });
-  const url = URL.createObjectURL(png);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `${name.replace(/[^a-z0-9._-]+/gi, "_") || "ncx-plot"}.png`;
-  link.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
-}
