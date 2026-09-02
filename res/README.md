@@ -93,8 +93,8 @@ So it covers Latin, Latin-1, Latin Extended-A, Greek, super/subscripts, arrows
 and the scientific punctuation CF metadata reaches for. Anything outside falls
 through the stack.
 
-Gorton keeps `kern,tnum,zero,ss02,ss04,ss06,ss12`; Commit Mono and National Park keep `kern`.
-The cut kept `kern` alone until now, which meant `font-variant-numeric:
-tabular-nums slashed-zero` had nothing in the file to switch on. Commit Mono's
-`calt` is dropped deliberately: it is programming ligatures, and `->` inside a
-`long_name` is two characters, not an arrow.
+Gorton keeps `kern,tnum,zero,ss02,ss04,ss06,ss12`; Commit Mono keeps
+`cv03,ss05`; National Park keeps `kern`. Commit Mono's smart kerning moves
+glyphs within fixed advances, so columns remain monospaced. Its `calt` and
+ligatures are dropped deliberately: `->` inside a `long_name` is two
+characters, not an arrow.

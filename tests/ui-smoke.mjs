@@ -419,9 +419,19 @@ try {
   const variableRows = [...document.querySelectorAll(".variable-row span")];
   const variableSearch = document.querySelector(".variable-search");
   if (variableSearch?.placeholder !== "Filter variables (" + variableRows.length + " variables)") failures.push("variable count did not move into the filter placeholder");
-  if (!getComputedStyle(variableSearch).fontFamily.includes("Commit Mono")) failures.push("variable filter did not use Commit Mono");
-  const variableNameSize = getComputedStyle(variableRows[0]).fontSize;
-  if (variableNameSize !== "12.5px") failures.push("variable names are not 12.5 px (got " + variableNameSize + ")");
+  const searchType = getComputedStyle(variableSearch);
+  if (!searchType.fontFamily.includes("Commit Mono")) failures.push("variable filter did not use Commit Mono");
+  if (searchType.fontSize !== "12px") failures.push("variable filter is not on the 12 px micro step");
+  const variableType = getComputedStyle(variableRows[0]);
+  if (variableType.fontSize !== "12.5px") failures.push("variable names are not 12.5 px (got " + variableType.fontSize + ")");
+  if (variableType.wordSpacing !== "0px" || !variableType.fontFeatureSettings.includes("ss05")) {
+    failures.push("Commit Mono roles lost fixed spaces or smart kerning");
+  }
+  const pathSeparatorSpacing = getComputedStyle(document.querySelector(".path i")).letterSpacing;
+  if (pathSeparatorSpacing !== "normal" && pathSeparatorSpacing !== "0px") failures.push("dataset path separator gained tracking");
+  if (getComputedStyle(document.documentElement).fontSize !== "16px" || getComputedStyle(document.querySelector(".statusbar")).fontSize !== "12px") {
+    failures.push("type tokens do not resolve from the browser root size");
+  }
   if (document.querySelector(".dataset-head")) failures.push("single-dataset variable count still occupies its own row");
   if (document.querySelector(".timeline output")) failures.push("timeline retained its redundant output");
   if (![...document.querySelectorAll(".timeline-fishbone b")].some((label) => label.textContent === "18")) failures.push("timeline fishbone did not show two-digit hours");

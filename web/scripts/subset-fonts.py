@@ -41,7 +41,7 @@ COMMIT = ROOT / "res/CommitMono"
 HERSHEY = ROOT / "res/AVHershey"
 OUT = ROOT / "res/gen"
 
-#: Gorton keeps seven OpenType features, Commit Mono keeps one.
+#: Gorton keeps seven OpenType features, Commit Mono keeps two.
 #:
 #: `tnum` and `zero` are what `font-variant-numeric: tabular-nums slashed-zero`
 #: resolves to. Without them in the subset that declaration is inert, which is
@@ -52,6 +52,7 @@ OUT = ROOT / "res/gen"
 #: is the opt-in cleanup of precisely the machine forms this interface wants,
 #: so it is neither enabled nor subsetted in.
 GORTON_FEATURES = "kern,tnum,zero,ss02,ss04,ss06,ss12"
+COMMIT_FEATURES = "cv03,ss05"
 
 #: (source, output, features).
 #:
@@ -59,9 +60,10 @@ GORTON_FEATURES = "kern,tnum,zero,ss02,ss04,ss06,ss12"
 #: built from size, case, tracking and rules rather than weight (see style.css),
 #: so two cuts is the whole range -- shipping seven would be six wasted payloads.
 #:
-#: Commit Mono is monospace, so tabular figures are inherent and it carries no
-#: `tnum`/`zero` to keep. Its `calt` is programming ligatures, which a column of
-#: values must not have: `->` inside a `long_name` is two characters, not an
+#: Commit Mono is monospace, so tabular figures are inherent. `cv03` squares
+#: punctuation to match the engraved chrome; `ss05` moves glyphs inside their
+#: fixed advances for easier reading without breaking columns. Its `calt` and
+#: ligatures stay out: `->` inside a `long_name` is two characters, not an
 #: arrow. Unlike Gorton it is SIL OFL, so its outputs are committed. The source
 #: is the upstream `ttfautohint` TrueType build rather than the CFF OTF: the OTF
 #: carries no grid-fitting tables, while the hinted TTF carries `gasp`, `fpgm`,
@@ -70,8 +72,8 @@ GORTON_FEATURES = "kern,tnum,zero,ss02,ss04,ss06,ss12"
 FACES = [
     (GORTON / "GortonPerfected-Regular.otf", OUT / "gorton-400.woff2", GORTON_FEATURES),
     (GORTON / "GortonPerfected-Semibold.otf", OUT / "gorton-600.woff2", GORTON_FEATURES),
-    (COMMIT / "src/CommitMono-400-Regular.ttf", COMMIT / "commit-400.woff2", "kern,cv03"),
-    (COMMIT / "src/CommitMono-700-Regular.ttf", COMMIT / "commit-700.woff2", "kern,cv03"),
+    (COMMIT / "src/CommitMono-400-Regular.ttf", COMMIT / "commit-400.woff2", COMMIT_FEATURES),
+    (COMMIT / "src/CommitMono-700-Regular.ttf", COMMIT / "commit-700.woff2", COMMIT_FEATURES),
     # National Park does two jobs, and was cut for only the first of them: it
     # backs AVHershey per glyph in the plots, so the original subset carried
     # exactly the ~200 characters an 89-glyph stroke font lacks -- punctuation,

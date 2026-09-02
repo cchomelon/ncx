@@ -195,10 +195,10 @@
      apparent height on the way over. It put body copy at 12.7px and metadata
      at 9.1px, both under any reasonable web floor.
 
-     So the ladder is re-anchored, not re-proportioned: `--size-body` is 1rem,
-     the browser's own default and the floor for ordinary web body text, and
-     every other role is the same 2^(1/4) step away from it that it was on
-     paper. Enlarging the root still enlarges the whole ladder together.
+     So the ladder is re-anchored, not re-proportioned: the browser root stays
+     at its reader-controlled default and `--size-body` is 0.875rem (14px at a
+     16px root). Every role is measured from that one root, so enlarging it
+     still enlarges the whole ladder together.
 
        micro  0.750rem  12px   provenance, table heads, dtype and shape
        tick   0.813rem  13     dense chrome, table cells, controls
@@ -279,6 +279,8 @@
      per-glyph fallback behind AVHershey in the plots. */
   --label-face: "CM Math", "National Park", ui-sans-serif, system-ui, sans-serif;
   --ui-face: "CM Math", "Gorton Perfected", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --ui-features: "ss02" 1, "ss04" 1, "ss06" 1, "ss12" 1;
+  --mono-features: "cv03" 1, "ss05" 1;
   --hit: 24px; /* WCAG 2.2 SC 2.5.8, minimum target */
 
   /* Status colours. Never the only channel -- each is paired with a word or an
@@ -303,20 +305,14 @@
      distinct on a screen. See the tracking ladder below. */
   letter-spacing: var(--track-body);
   word-spacing: var(--word-space);
-  font-size: var(--size-body);
+  font-size: 100%;
   color: var(--ink);
   background: var(--paper);
-  /* Figures line up in columns and a zero never reads as an O. Inert until
-     now: the subset kept `kern` only, so `tnum` and `zero` were not in the
-     file to switch on (web/scripts/subset-fonts.py). */
+  /* Figures line up in columns and a zero never reads as an O. */
   font-variant-numeric: tabular-nums slashed-zero;
-  /* Four single-glyph drafting forms. Deliberately not ss01, which the foundry
-     names "Not ugly variants" -- it cleans up precisely the machine-cut forms
-     this face was chosen for. */
-  /* ss02/04/06/12 are Gorton drafting forms; cv03 squares Commit Mono's
-     dots and colons to match the engraved chrome. Each face ignores the
-     other's tags, so one declaration tunes both. */
-  font-feature-settings: "ss02" 1, "ss04" 1, "ss06" 1, "ss12" 1, "cv03" 1;
+  /* These are Gorton's machine-drafting forms. Commit Mono's features are
+     scoped to data roles below, so a fallback font cannot reinterpret them. */
+  font-feature-settings: var(--ui-features);
 }
 
 * {
@@ -333,12 +329,49 @@ body,
   overflow: hidden;
 }
 
+body {
+  font-size: var(--size-body);
+}
+
 button,
 input,
 select,
 output {
   font: inherit;
   color: inherit;
+  font-feature-settings: inherit;
+}
+
+/* File-derived values use one face, one spacing model and one feature set.
+   Keep the registry here so adding a data role cannot leave half its typography
+   behind in another selector. */
+.path,
+.path i,
+.dataset-switcher select,
+.dataset-head span,
+.variable-search,
+.tree summary,
+.warnings summary,
+.variable-row span,
+.variable-row small,
+.display-controls select,
+.display-controls input,
+.dimension-readout output,
+.series-control > strong,
+.series-control > span,
+.series-control input,
+.field-comparison-pane > header,
+.scalar-value small,
+.metadata-panel h2,
+.metadata-summary dd,
+.metadata-panel tbody th,
+.metadata-panel tbody td,
+.timeline-zone,
+.statusbar {
+  font-family: var(--mono);
+  letter-spacing: normal;
+  word-spacing: normal;
+  font-feature-settings: var(--mono-features);
 }
 
 button,
@@ -474,11 +507,6 @@ button:disabled {
   color: var(--ink-medium);
   white-space: nowrap;
   text-overflow: ellipsis;
-  /* A dataset name and a variable path are data, not chrome. They also carry
-     whatever characters the file carries -- and Gorton has no superscripts, so
-     a unit like `m s-1` written properly fell out of the stack here. */
-  font-family: var(--mono);
-  letter-spacing: normal;
 }
 
 .path b {
@@ -506,9 +534,7 @@ button:disabled {
 }
 
 .dataset-switcher select {
-  min-width: 120px;
-  font-family: var(--mono);
-  letter-spacing: normal;
+  min-width: 15ch;
   text-transform: none;
 }
 
@@ -560,9 +586,6 @@ button:disabled {
 .dataset-head span {
   color: var(--ink-quiet);
   font-size: var(--size-micro);
-  /* A bare count is a value. */
-  font-family: var(--mono);
-  letter-spacing: normal;
 }
 
 .variable-filter {
@@ -577,8 +600,7 @@ button:disabled {
   width: 100%;
   margin: 0;
   padding: 0 8px;
-  font-family: var(--mono);
-  letter-spacing: normal;
+  font-size: var(--size-micro);
 }
 
 .variable-filter label {
@@ -611,10 +633,8 @@ button:disabled {
   padding: 7px 10px;
   color: var(--ink-medium);
   cursor: pointer;
-  font-family: var(--mono);
-  letter-spacing: normal;
   font-size: var(--size-tick);
-  font-weight: 600;
+  font-weight: 700;
   /* The UA marker is a character as well, and not one this binary ships. */
   list-style: none;
 }
@@ -709,9 +729,7 @@ button:disabled {
 }
 
 .variable-row span {
-  font-family: var(--mono);
-  font-size: 0.8928571429rem;
-  letter-spacing: normal;
+  font-size: 0.78125rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -721,8 +739,6 @@ button:disabled {
   overflow: hidden;
   margin-top: 1px;
   color: var(--ink-quiet);
-  font-family: var(--mono);
-  letter-spacing: normal;
   font-size: var(--size-micro);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -783,7 +799,7 @@ button:disabled {
 
 .view-tabs button.active {
   color: var(--accent);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .view-tabs button.active::after {
@@ -850,21 +866,16 @@ button:disabled {
 .display-controls select,
 .display-controls input {
   width: auto;
-  max-width: 168px;
+  max-width: 21ch;
   height: 28px;
   color: var(--ink);
   font-size: var(--size-tick);
   font-weight: 400;
   text-transform: none;
-  /* Every value in this strip comes out of the file: dimension names,
-     coordinate paths, colourmap names, indices. The uppercase label beside it
-     is chrome and stays in the signage face; the value is data. */
-  font-family: var(--mono);
-  letter-spacing: normal;
 }
 
 .display-controls input[type="number"] {
-  width: 68px;
+  width: 8.75ch;
   padding: 0 5px;
 }
 
@@ -873,7 +884,7 @@ button:disabled {
 }
 
 .display-controls .range-values input {
-  width: 82px;
+  width: 10.5ch;
 }
 
 .display-controls .range-values input[readonly] {
@@ -883,8 +894,6 @@ button:disabled {
 
 .dimension-readout output {
   color: var(--ink);
-  font-family: var(--mono);
-  letter-spacing: normal;
   font-size: var(--size-tick);
   font-weight: 400;
   text-transform: none;
@@ -895,7 +904,7 @@ button:disabled {
   min-height: 28px;
   font-size: var(--size-tick);
   letter-spacing: var(--track-small);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .stage {
@@ -1014,14 +1023,6 @@ button:disabled {
   color: var(--ink-quiet);
 }
 
-/* The legend names a series: both the variable identity and its datum are read
-   out of the file, so both are the data face. */
-.series-control > strong,
-.series-control > span {
-  font-family: var(--mono);
-  letter-spacing: normal;
-}
-
 /* Same job as a toolbar control label, so the same face and case. It was the
    one control label left in the chrome face. */
 .series-control label {
@@ -1037,10 +1038,8 @@ button:disabled {
 }
 
 .series-control input {
-  width: 62px;
+  width: 8ch;
   padding: 0 4px;
-  font-family: var(--mono);
-  letter-spacing: normal;
 }
 
 .series-control input[type="checkbox"] {
@@ -1098,8 +1097,6 @@ button:disabled {
   gap: 7px;
   padding: 0 8px;
   background: var(--panel);
-  font-family: var(--mono);
-  letter-spacing: normal;
   font-size: var(--size-tick);
 }
 
@@ -1155,8 +1152,6 @@ button:disabled {
 .scalar-value small {
   margin-top: 5px;
   color: var(--ink-quiet);
-  font-family: var(--mono);
-  letter-spacing: normal;
 }
 
 .field-canvas {
@@ -1229,7 +1224,7 @@ button:disabled {
   background: var(--paper);
   font-size: var(--size-micro);
   letter-spacing: var(--track-small);
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .mesh-warning {
@@ -1437,8 +1432,6 @@ button:disabled {
 }
 
 .metadata-panel h2 {
-  font-family: var(--mono);
-  letter-spacing: normal;
   font-size: var(--size-title);
   line-height: var(--line-height-tight);
 }
@@ -1479,8 +1472,6 @@ button:disabled {
 
 .metadata-summary dd {
   margin: 0;
-  font-family: var(--mono);
-  letter-spacing: normal;
 }
 
 .metadata-panel table {
@@ -1507,21 +1498,10 @@ button:disabled {
   letter-spacing: var(--track-caps);
 }
 
-/* Every cell in these tables is read out of the file -- names, dtypes, lengths,
-   scopes, attribute values -- so all of it is data and all of it is the data
-   face. Only the first two columns were, which left attribute values and
-   dimension scopes set in the chrome face: proportional, non-aligning, and a
-   third face in one panel. */
-.metadata-panel tbody th,
-.metadata-panel tbody td {
-  font-family: var(--mono);
-  letter-spacing: normal;
-}
-
 .metadata-panel tbody th,
 .metadata-panel tbody td:first-of-type {
-  width: 150px;
-  font-weight: 500;
+  width: 18ch;
+  font-weight: 400;
 }
 
 .attribute-value {
@@ -1640,10 +1620,6 @@ button:disabled {
 
 .timeline-zone {
   color: var(--ink-quiet);
-  /* A zone is a data value, not part of the uppercase TIME label. National
-     Park at the tick size was the last unhinted small text in this strip. */
-  font-family: var(--mono);
-  letter-spacing: normal;
   font-weight: 400;
   text-transform: none;
 }
@@ -1679,8 +1655,6 @@ button:disabled {
   border-top: 1px solid var(--ink);
   background: var(--plate);
   color: var(--plate-quiet);
-  font-family: var(--mono);
-  letter-spacing: normal;
   font-size: var(--size-micro);
 }
 
