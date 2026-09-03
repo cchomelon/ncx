@@ -11,7 +11,7 @@ import {
 import type { ComparisonSeries, DataSlice, Metadata, Probe, Variable } from "./model";
 import { attributeText, displayUnit, quantityLabel, variableLabel } from "./model";
 import { curveRequest } from "./selection";
-import { axisTicks, tickCountForLength } from "./ticks";
+import { tickLadder } from "./ticks";
 import {
   describeTime,
   formatTimestamp,
@@ -582,11 +582,7 @@ export function CurveAxes({
   // other axis in the app.
   const numeric = time
     ? undefined
-    : axisTicks(
-        geometry.xMinimum,
-        geometry.xMaximum,
-        tickCountForLength(plot.width, type.tick * PITCH.along),
-      );
+    : tickLadder(geometry.xMinimum, geometry.xMaximum, plot.width, type.tick);
   // Two digits of label, so DCL's two-label-height minimum is the whole rule.
   const timeTicks = time
     ? timeAxisTicks(
@@ -598,12 +594,14 @@ export function CurveAxes({
     : [];
   const xAt = (value: number) =>
     plot.left + (xSpan === 0 ? 0.5 : (value - geometry.xMinimum) / xSpan) * plot.width;
-  const y = axisTicks(geometry.yMinimum, geometry.yMaximum, tickCountForLength(plot.height, type.tick * PITCH.across));
+  const y = tickLadder(geometry.yMinimum, geometry.yMaximum, plot.height, type.tick, {
+    across: true,
+  });
   const tick = tickLength(type);
   const ySpan = geometry.yMaximum - geometry.yMinimum;
   const yAt = (value: number) =>
     plot.top + (1 - (ySpan === 0 ? 0.5 : (value - geometry.yMinimum) / ySpan)) * plot.height;
-  const offset = axisOffsets(type, widestLabel(y.values, y.format), time ? 2 : 1);
+  const offset = axisOffsets(type, widestLabel(y.major, y.format), time ? 2 : 1);
   const minorTick = tickLength(type, true);
   return (
     <g
@@ -611,7 +609,7 @@ export function CurveAxes({
       data-x-domain={`${geometry.xMinimum},${geometry.xMaximum}`}
       data-y-domain={`${geometry.yMinimum},${geometry.yMaximum}`}
     >
-      {y.values.map((value) => (
+      {y.major.map((value) => (
         <line
           key={`grid-${value}`}
           className="gridline"
@@ -621,12 +619,33 @@ export function CurveAxes({
           y2={yAt(value)}
         />
       ))}
-      <path d={`M${plot.left} ${plot.top}V${bottom}H${plot.left + plot.width}`} />
-      {numeric?.values.map((value) => {
+      <rect x={plot.left} y={plot.top} width={plot.width} height={plot.height} />
+      {numeric?.minor.map((value) => {
+        const x = xAt(value);
+        return (
+          <g key={`xm-${value}`}>
+            <line x1={x} x2={x} y1={bottom} y2={bottom + minorTick} />
+            <line x1={x} x2={x} y1={plot.top} y2={plot.top - minorTick} />
+          </g>
+        );
+      })}
+      {y.minor.map((value) => (
+        <g key={`ym-${value}`}>
+          <line x1={plot.left} x2={plot.left - minorTick} y1={yAt(value)} y2={yAt(value)} />
+          <line
+            x1={plot.left + plot.width}
+            x2={plot.left + plot.width + minorTick}
+            y1={yAt(value)}
+            y2={yAt(value)}
+          />
+        </g>
+      ))}
+      {numeric?.major.map((value) => {
         const x = xAt(value);
         return (
           <g key={`x-${value}`}>
             <line x1={x} x2={x} y1={bottom} y2={bottom + tick} />
+            <line x1={x} x2={x} y1={plot.top} y2={plot.top - tick} />
             <text x={x} y={bottom + offset.xRow(0)} textAnchor="middle">
               {numeric.format(value)}
             </text>
@@ -638,6 +657,12 @@ export function CurveAxes({
         return (
           <g key={`x-${entry.value}`}>
             <line x1={x} x2={x} y1={bottom} y2={bottom + (entry.major ? tick : minorTick)} />
+            <line
+              x1={x}
+              x2={x}
+              y1={plot.top}
+              y2={plot.top - (entry.major ? tick : minorTick)}
+            />
             {/* 0.27 minor em is the difference between the full and half tick
                 lengths. It keeps the gap from each tick tip equal while the
                 hour and date keep separate baselines. */}
@@ -658,9 +683,15 @@ export function CurveAxes({
           </g>
         );
       })}
-      {y.values.map((value) => (
+      {y.major.map((value) => (
         <g key={`y-${value}`}>
           <line x1={plot.left - tick} x2={plot.left} y1={yAt(value)} y2={yAt(value)} />
+          <line
+            x1={plot.left + plot.width}
+            x2={plot.left + plot.width + tick}
+            y1={yAt(value)}
+            y2={yAt(value)}
+          />
           <text x={plot.left - offset.yLabel} y={yAt(value)} dy="0.32em" textAnchor="end">
             {y.format(value)}
           </text>

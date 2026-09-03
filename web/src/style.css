@@ -1847,3 +1847,137 @@ em .value,
 i .value {
   letter-spacing: normal;
 }
+
+/* -----------------------------------------------------------------------
+   Save dialog.
+
+   Native <dialog>: the backdrop, the focus trap, Escape-to-close and the
+   modal semantics are the element's, not ours. Only the surface is styled.
+   ----------------------------------------------------------------------- */
+.save-dialog {
+  min-width: 320px;
+  max-width: 92vw;
+  padding: 0;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  background: var(--stock);
+  color: var(--ink);
+}
+
+.save-dialog::backdrop {
+  background: rgb(16 20 24 / 38%);
+}
+
+.save-dialog form {
+  display: grid;
+  gap: 12px;
+  padding: 16px 20px 20px;
+}
+
+.save-dialog h2 {
+  margin: 0;
+  font-size: var(--size-title);
+  font-weight: 700;
+  letter-spacing: var(--track-small);
+}
+
+.save-dialog fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.save-dialog legend {
+  padding: 0 0 4px;
+  color: var(--ink-quiet);
+  font-size: var(--size-micro);
+  letter-spacing: var(--track-small);
+  text-transform: uppercase;
+}
+
+.save-dialog .chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* The radio stays in the accessibility tree and keeps keyboard operation; the
+   chip is its label, so the whole target is clickable and clears 24px. */
+.save-dialog .chip {
+  display: inline-flex;
+  min-height: var(--hit);
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  font-size: var(--size-tick);
+}
+
+.save-dialog .chip:has(input:checked) {
+  border-color: var(--ink);
+  background: var(--amber-pale);
+  font-weight: 600;
+}
+
+.save-dialog .chip:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.save-dialog .chip.custom input {
+  width: 64px;
+  border: 0;
+  background: transparent;
+}
+
+.save-dialog .field {
+  display: grid;
+  gap: 4px;
+  font-size: var(--size-micro);
+  color: var(--ink-quiet);
+  letter-spacing: var(--track-small);
+  text-transform: uppercase;
+}
+
+.save-dialog .field input {
+  min-height: var(--hit);
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--size-body);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.save-dialog .hint {
+  margin: 0;
+  color: var(--ink-quiet);
+  font-size: var(--size-micro);
+}
+
+.save-dialog .hint .preview {
+  font-family: var(--plot-face);
+  font-size: var(--size-body);
+  color: var(--ink);
+}
+
+.save-dialog .dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.save-dialog .dialog-actions button {
+  min-height: var(--hit);
+  padding: 0 16px;
+}
+
+.save-dialog .dialog-actions .primary {
+  border-color: var(--ink);
+  background: var(--amber);
+  font-weight: 600;
+}

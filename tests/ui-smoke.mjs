@@ -452,6 +452,32 @@ try {
   await new Promise((resolve) => setTimeout(resolve, 700));
   if (window.__ncxFetches.length !== stableReads) failures.push("stable view kept refetching");
 
+  window.__ncxStep = "save dialog";
+  {
+    const open = [...document.querySelectorAll("button")]
+      .find((button) => button.textContent.trim() === "Save PNG");
+    if (!open) failures.push("Save PNG button is missing");
+    else {
+      open.click();
+      await waitFor(() => document.querySelector("dialog.save-dialog[open]"), "save dialog did not open");
+      const dialog = document.querySelector("dialog.save-dialog");
+      const widths = [...dialog.querySelectorAll('input[name="width"]')];
+      const dpis = [...dialog.querySelectorAll('input[name="dpi"]')];
+      if (widths.length !== 3) failures.push("save dialog is missing its width presets");
+      if (dpis.length !== 3) failures.push("save dialog is missing its dpi presets");
+      if (!widths.some((input) => input.checked)) failures.push("no width preset is selected");
+      const fields = [...dialog.querySelectorAll(".field input")];
+      if (fields.length !== 4) failures.push("save dialog is missing its lettering fields");
+      // Prefilled from the live figure, not blank.
+      if (!fields.some((input) => input.value.trim())) {
+        failures.push("save dialog lettering fields were not prefilled");
+      }
+      [...dialog.querySelectorAll("button")]
+        .find((button) => button.textContent.trim() === "Cancel")?.click();
+      await waitFor(() => !document.querySelector("dialog.save-dialog[open]"), "save dialog did not close");
+    }
+  }
+
   window.__ncxStep = "range controls";
   const rangeSelect = [...document.querySelectorAll(".display-controls label")]
     .find((label) => label.textContent.trim().startsWith("Range"))?.querySelector("select");

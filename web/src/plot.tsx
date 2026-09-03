@@ -9,7 +9,7 @@
 import { colorForValue, colorPosition, type ColorRange } from "./color";
 import type { ColorScale } from "./model";
 import type { ColormapChoice } from "./color";
-import { axisTicks, tickCountForLength } from "./ticks";
+import { axisTicks, tickCountForLength, tickLadder } from "./ticks";
 import {
   DEFAULT_TYPE,
   PITCH,
@@ -61,7 +61,7 @@ export function PlotAxes({
   yDomain: [number, number];
   xLabel: string;
   yLabel: string;
-  /** Map and image panels are boxed; a time series keeps only two spines. */
+  /** Kept for callers; the frame closes on all four sides either way now. */
   boxed?: boolean;
   /** Faint y-only gridlines, for reading a value off a curve. */
   grid?: boolean;
@@ -69,20 +69,21 @@ export function PlotAxes({
   type?: PlotType;
 }) {
   const tick = tickLength(type);
-  const x = axisTicks(xDomain[0], xDomain[1], tickCountForLength(plot.width, type.tick * PITCH.along));
-  const y = axisTicks(yDomain[0], yDomain[1], tickCountForLength(plot.height, type.tick * PITCH.across));
+  const minorTick = tickLength(type, true);
+  const x = tickLadder(xDomain[0], xDomain[1], plot.width, type.tick);
+  const y = tickLadder(yDomain[0], yDomain[1], plot.height, type.tick, { across: true });
   const xAt = scaleFor(xDomain, plot.width, false);
   const yAt = scaleFor(yDomain, plot.height, true);
   const bottom = plot.top + plot.height;
   const right = plot.left + plot.width;
-  const offset = axisOffsets(type, widestLabel(y.values, y.format));
+  const offset = axisOffsets(type, widestLabel(y.major, y.format));
   return (
     <g
       className="plot-axis"
       data-x-domain={`${xDomain[0]},${xDomain[1]}`}
       data-y-domain={`${yDomain[0]},${yDomain[1]}`}
     >
-      {grid && y.values.map((value) => (
+      {grid && y.major.map((value) => (
         <line
           key={`grid-${value}`}
           className="gridline"
@@ -92,25 +93,44 @@ export function PlotAxes({
           y2={plot.top + yAt(value)}
         />
       ))}
-      {boxed ? (
-        <rect x={plot.left} y={plot.top} width={plot.width} height={plot.height} />
-      ) : (
-        <path d={`M${plot.left} ${plot.top}V${bottom}H${right}`} />
-      )}
-      {x.values.map((value) => {
+      {/* design.md: the frame closes on all four sides and every side carries
+          the tick ladder. Only the bottom and left are labelled, so the top and
+          right cost no margin -- which is why the rule is free to apply. */}
+      <rect x={plot.left} y={plot.top} width={plot.width} height={plot.height} />
+      {x.minor.map((value) => {
+        const position = plot.left + xAt(value);
+        return (
+          <g key={`xm-${value}`}>
+            <line x1={position} x2={position} y1={bottom} y2={bottom + minorTick} />
+            <line x1={position} x2={position} y1={plot.top} y2={plot.top - minorTick} />
+          </g>
+        );
+      })}
+      {y.minor.map((value) => {
+        const position = plot.top + yAt(value);
+        return (
+          <g key={`ym-${value}`}>
+            <line x1={plot.left} x2={plot.left - minorTick} y1={position} y2={position} />
+            <line x1={right} x2={right + minorTick} y1={position} y2={position} />
+          </g>
+        );
+      })}
+      {x.major.map((value) => {
         const position = plot.left + xAt(value);
         return (
           <g key={`x-${value}`}>
             <line x1={position} x2={position} y1={bottom} y2={bottom + tick} />
+            <line x1={position} x2={position} y1={plot.top} y2={plot.top - tick} />
             <text x={position} y={bottom + offset.xLabel} textAnchor="middle">{x.format(value)}</text>
           </g>
         );
       })}
-      {y.values.map((value) => {
+      {y.major.map((value) => {
         const position = plot.top + yAt(value);
         return (
           <g key={`y-${value}`}>
             <line x1={plot.left - tick} x2={plot.left} y1={position} y2={position} />
+            <line x1={right} x2={right + tick} y1={position} y2={position} />
             <text
               x={plot.left - offset.yLabel}
               y={position}

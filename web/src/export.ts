@@ -19,6 +19,8 @@
  * style rules exist to prevent.
  */
 
+import { parseMath } from "./mathtext";
+
 /** Style's print resolution. */
 export const EXPORT_DPI = 400;
 /** The resolution a CSS pixel is defined against. */
@@ -102,12 +104,81 @@ function svgElement<K extends keyof SVGElementTagNameMap>(name: K): SVGElementTa
 }
 
 /** Title and subtitle for the band, read from the figure's own header. */
-function figureHeading(): { title: string; subtitle: string } {
+export function figureHeading(): { title: string; subtitle: string } {
   const head = document.querySelector(".figure-head");
   return {
     title: head?.querySelector("h1")?.textContent?.trim() ?? "",
     subtitle: head?.querySelector("span")?.textContent?.trim() ?? "",
   };
+}
+
+/** The axis titles the live figure is drawing, for prefilling the save form. */
+export function figureAxisTitles(): { x: string; y: string } {
+  const labels = document.querySelectorAll<SVGTextElement>(
+    ".plot-frame .plot-axis .axis-label",
+  );
+  return {
+    x: labels[0]?.textContent?.trim() ?? "",
+    y: labels[1]?.textContent?.trim() ?? "",
+  };
+}
+
+/** Publication widths from design.md § Figure widths, in millimetres. */
+export const WIDTHS_MM = [89, 120, 183] as const;
+export const DPI_CHOICES = [300, 400, 600] as const;
+const MM_PER_INCH = 25.4;
+
+export interface ExportOptions {
+  /** Output width in millimetres. The figure is scaled to it. */
+  widthMm: number;
+  dpi: number;
+  /** Overrides for the plate's own lettering. Empty means "leave it out". */
+  title: string;
+  subtitle: string;
+  xTitle: string;
+  yTitle: string;
+}
+
+export function defaultExportOptions(): ExportOptions {
+  const heading = figureHeading();
+  const axes = figureAxisTitles();
+  return {
+    widthMm: 183,
+    dpi: EXPORT_DPI,
+    title: heading.title,
+    subtitle: heading.subtitle,
+    xTitle: axes.x,
+    yTitle: axes.y,
+  };
+}
+
+/** Lay `source` into `target` as baseline-shifted tspans (see `mathtext.ts`). */
+function appendMath(target: SVGTextElement, source: string, size: number): void {
+  const runs = parseMath(source);
+  if (runs.length === 1 && runs[0].shift === 0) {
+    target.textContent = runs[0].text;
+    return;
+  }
+  let offset = 0;
+  for (const run of runs) {
+    const span = svgElement("tspan");
+    const shift = -run.shift * size;
+    span.setAttribute("dy", String(shift - offset));
+    span.setAttribute("font-size", `${size * run.scale}px`);
+    span.textContent = run.text;
+    target.append(span);
+    offset = shift;
+  }
+}
+
+/** Replace an axis title already cloned into the export, keeping its position. */
+function retitleAxis(root: SVGElement, index: number, text: string): void {
+  const labels = root.querySelectorAll<SVGTextElement>(".axis-label");
+  const label = labels[index];
+  if (!label) return;
+  const size = parseFloat(getComputedStyle(label).fontSize) || 14;
+  label.textContent = "";
+  appendMath(label, text, size);
 }
 
 /**
@@ -117,16 +188,17 @@ function figureHeading(): { title: string; subtitle: string } {
  * axes and their units, the colourbar with the active colour scale and range,
  * and a title band naming the variable and the step.
  */
-export async function exportPlotPng(name: string): Promise<void> {
+export async function exportPlotPng(name: string, options?: ExportOptions): Promise<void> {
   const frame = document.querySelector<HTMLElement>(".plot-frame");
   const source = frame?.querySelector<SVGSVGElement>("svg.plot-svg, svg.curve-svg");
   if (!frame || !source) throw new Error("The current view has no plot to save");
 
+  const settings = options ?? defaultExportOptions();
   const frameRect = frame.getBoundingClientRect();
   const width = Math.max(1, Math.round(frameRect.width));
   const plotHeight = Math.max(1, Math.round(frameRect.height));
 
-  const heading = figureHeading();
+  const heading = { title: settings.title, subtitle: settings.subtitle };
   const titleSize = parseFloat(getComputedStyle(frame).getPropertyValue("--plot-title-size")) || 20;
   const subtitleSize = parseFloat(getComputedStyle(frame).getPropertyValue("--plot-subtitle-size")) || 14;
   const bandHeight = heading.title
@@ -163,7 +235,7 @@ export async function exportPlotPng(name: string): Promise<void> {
     title.setAttribute("text-anchor", "middle");
     title.setAttribute("style",
       `font-family:${face};font-size:${titleSize}px;font-weight:700;fill:#101418`);
-    title.textContent = heading.title;
+    appendMath(title, heading.title, titleSize);
     output.append(title);
     if (heading.subtitle) {
       const subtitle = svgElement("text");
@@ -199,9 +271,14 @@ export async function exportPlotPng(name: string): Promise<void> {
 
   const furniture = source.cloneNode(true) as SVGSVGElement;
   inlineComputedStyle(source, furniture);
+  retitleAxis(furniture, 0, settings.xTitle);
+  retitleAxis(furniture, 1, settings.yTitle);
   for (const child of Array.from(furniture.childNodes)) body.append(child);
 
-  const scale = EXPORT_DPI / CSS_DPI;
+  // The output is a faithful scaled copy of the panel: one factor takes the
+  // whole composition to the requested physical width at the requested
+  // resolution. Nothing is re-laid-out, so what was on screen is what prints.
+  const scale = ((settings.widthMm / MM_PER_INCH) * settings.dpi) / width;
   const raster = document.createElement("canvas");
   raster.width = Math.max(1, Math.round(width * scale));
   raster.height = Math.max(1, Math.round(height * scale));

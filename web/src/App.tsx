@@ -6,6 +6,7 @@ import { ComparisonCurveView } from "./ComparisonCurveView";
 import { ComparisonFieldView } from "./ComparisonFieldView";
 import { CurveView } from "./CurveView";
 import { exportPlotPng } from "./export";
+import { SaveDialog } from "./SaveDialog";
 import { FieldView } from "./FieldView";
 import { MeshFieldView } from "./MeshFieldView";
 import { MetadataPanel } from "./MetadataPanel";
@@ -88,6 +89,7 @@ export function App() {
   const [coordinatePaths, setCoordinatePaths] = useState<{ x?: string; y?: string }>({});
   const [mapSource, setMapSource] = useState<"none" | "osm">("none");
   const [curveAlong, setCurveAlong] = useState<number>();
+  const [saving, setSaving] = useState(false);
   const [displayTimeZone, setDisplayTimeZone] = useState<DisplayTimeZone>(
     displayTimeZones[0],
   );
@@ -619,13 +621,18 @@ export function App() {
               className="screenshot-button"
               title="Save plot as PNG"
               disabled={view === "metadata"}
-              onClick={() => void exportPlotPng(variable.name).catch((error: unknown) => {
-                updateStatus(error instanceof Error ? error.message : String(error));
-              })}
+              onClick={() => setSaving(true)}
             >
               Save PNG
             </button>
           </div>
+          {saving && (
+            <SaveDialog
+              name={variable.name}
+              onClose={() => setSaving(false)}
+              onError={updateStatus}
+            />
+          )}
         </div>
 
         <section className="stage">

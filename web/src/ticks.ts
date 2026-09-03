@@ -86,3 +86,180 @@ export function tickCountForLength(pixels: number, pixelsPerTick = 84): number {
 function trimExponential(text: string): string {
   return text.replace(/\.?0+e/, "e").replace("e+", "e");
 }
+
+/* ---------------------------------------------------------------------------
+   The two-tier ladder, ported from Style/plotstyle/helpers.py.
+
+   design.md § Frame: "Two tick ladders: dense small ticks; labelled every 2nd,
+   5th, or 10th." A single tier cannot do both jobs -- a ladder dense enough to
+   read a value off is far too dense to label, and a ladder sparse enough to
+   label leaves the reader interpolating across a wide gap.
+
+   Small ticks come from the axis length alone; the labelled interval is then a
+   whole multiple of the small one, chosen so the labels themselves do not
+   collide. Both round onto DCL's 1/2/5 blocks, which is why the numbers a
+   reader sees are always round.
+   --------------------------------------------------------------------------- */
+
+const BLOCK_125 = [1, 2, 5, 10];
+const BLOCK_124 = [1, 2, 4, 10];
+const BLOCK_EPS = 1e-6;
+
+function splitMantissa(value: number): [number, number] {
+  if (value === 0) return [0, 0];
+  const power = Math.floor(Math.log10(Math.abs(value)));
+  return [Math.abs(value) / 10 ** power, power];
+}
+
+/** Greatest block value at or below `value` (DCL GNLE). Rounds an interval down. */
+export function blockLe(value: number, block = BLOCK_125): number {
+  const [mantissa, power] = splitMantissa(value);
+  if (mantissa === 0) return 0;
+  let chosen = block[0];
+  for (const candidate of block) if (candidate <= mantissa * (1 + BLOCK_EPS)) chosen = candidate;
+  return chosen * 10 ** power;
+}
+
+/** Least block value at or above `value` (DCL GNGE). Rounds an interval up. */
+export function blockGe(value: number, block = BLOCK_125): number {
+  const [mantissa, power] = splitMantissa(value);
+  if (mantissa === 0) return 0;
+  for (const candidate of block) {
+    if (candidate >= mantissa * (1 - BLOCK_EPS)) return candidate * 10 ** power;
+  }
+  return block[block.length - 1] * 10 ** power;
+}
+
+/**
+ * Small-tick interval, in data units (DCL `usurdt.f`).
+ *
+ * Target spacing is two label heights; rounding it *down* onto 1/2/5 puts the
+ * ticks between 0.4 and 1.0 of that apart, which is design.md's 15-35 small
+ * ticks on a normal panel.
+ */
+export function minorInterval(
+  minimum: number,
+  maximum: number,
+  length: number,
+  labelHeight: number,
+): number {
+  const span = maximum - minimum;
+  if (length <= 0 || span === 0 || !Number.isFinite(span)) return 1;
+  return blockLe(Math.abs((span / length) * labelHeight * 2));
+}
+
+/** Characters in the widest label at `step`, standing in for DCL's USZDGT. */
+function labelWidth(minimum: number, maximum: number, step: number, maxDigits: number): number {
+  const decimals = Math.min(
+    Math.max(0, -Math.floor(Math.log10(Math.abs(step)) + BLOCK_EPS)),
+    Math.max(0, maxDigits - 1),
+  );
+  const width = Math.max(
+    minimum.toFixed(decimals).length,
+    maximum.toFixed(decimals).length,
+  );
+  return Math.max(1, Math.min(width, maxDigits + 2));
+}
+
+/**
+ * Labelled-tick interval, in data units (DCL `ususcu.f`).
+ *
+ * Always a whole multiple of `step`, minimum 2: a DCL axis never labels every
+ * small tick. `across` is true for a y axis, whose labels stack sideways and
+ * need a two-character gap rather than one.
+ */
+export function labelInterval(
+  minimum: number,
+  maximum: number,
+  length: number,
+  labelHeight: number,
+  step: number,
+  { across = false, maxDigits = 4 }: { across?: boolean; maxDigits?: number } = {},
+): number {
+  const span = Math.abs(maximum - minimum);
+  if (span === 0 || step <= 0 || length <= 0) return Math.max(step, 1) * 2;
+  const perUnit = length / span;
+  const gap = across ? 2 : 1;
+  const block = Math.abs(splitMantissa(step)[0] - 5) < BLOCK_EPS ? BLOCK_124 : BLOCK_125;
+  let floor = step * 2;
+  let out = floor;
+  for (let pass = 0; pass < 2; pass += 1) {
+    const digits = across ? 1 : labelWidth(minimum, maximum, floor, maxDigits);
+    const factor = blockGe((labelHeight * (digits + gap)) / (perUnit * step), block);
+    const whole = Math.trunc(Math.max(factor, 2) + 0.1);
+    out = Math.max(step * whole, floor);
+    if (whole < 10) break;
+    floor = out / 2;
+  }
+  // DCL sizes labels against a full-page viewport; in a narrow panel the same
+  // arithmetic can leave one label on the axis, or none.
+  while (out > step * 2 && span / out < 2) out = Math.max(step * 2, out / 2);
+  return out;
+}
+
+/** Every multiple of `step` inside the domain, endpoints included. */
+function multiplesWithin(minimum: number, maximum: number, step: number): number[] {
+  if (!(step > 0) || !Number.isFinite(step)) return [];
+  const tolerance = step * 1e-9;
+  const values: number[] = [];
+  for (
+    let value = Math.ceil(minimum / step - 1e-9) * step;
+    value <= maximum + tolerance && values.length <= 4000;
+    value += step
+  ) {
+    values.push(Math.abs(value) < tolerance ? 0 : value);
+  }
+  return values;
+}
+
+/** A domain grown outward onto whole small ticks (design.md § Frame). */
+export function limitsOnTick(
+  minimum: number,
+  maximum: number,
+  step: number,
+): [number, number] {
+  if (!(step > 0) || !Number.isFinite(step)) return [minimum, maximum];
+  return [
+    Math.floor(minimum / step + 1e-9) * step,
+    Math.ceil(maximum / step - 1e-9) * step,
+  ];
+}
+
+export interface TickLadder {
+  /** Every small tick. Unlabelled; drawn at half length. */
+  minor: number[];
+  /** The labelled subset. Drawn at full length. */
+  major: number[];
+  /** Small-tick interval, for rounding limits onto a tick. */
+  step: number;
+  format: (value: number) => string;
+}
+
+/**
+ * The dense small ladder and its labelled subset for one axis.
+ *
+ * `length` is the axis length in px and `labelHeight` the tick type size, so
+ * the whole ladder follows the type the way every other distance in the figure
+ * does.
+ */
+export function tickLadder(
+  minimum: number,
+  maximum: number,
+  length: number,
+  labelHeight: number,
+  { across = false }: { across?: boolean } = {},
+): TickLadder {
+  const low = Math.min(minimum, maximum);
+  const high = Math.max(minimum, maximum);
+  if (!Number.isFinite(low) || !Number.isFinite(high) || low === high) {
+    return { minor: [], major: low === high ? [low] : [], step: 1, format: (v) => formatTick(v, 1) };
+  }
+  const step = minorInterval(low, high, length, labelHeight);
+  const labelStep = labelInterval(low, high, length, labelHeight, step, { across });
+  const major = multiplesWithin(low, high, labelStep);
+  const majorSet = new Set(major.map((value) => Math.round(value / step)));
+  const minor = multiplesWithin(low, high, step).filter(
+    (value) => !majorSet.has(Math.round(value / step)),
+  );
+  return { minor, major, step, format: (value: number) => formatTick(value, labelStep) };
+}
