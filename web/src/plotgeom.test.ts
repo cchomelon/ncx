@@ -5,6 +5,7 @@ import {
   ADVANCE,
   COLORBAR_CHARS,
   PAD,
+  tickLength,
   axisOffsets,
   colorbarGeometry,
   plotMargin,
@@ -92,6 +93,24 @@ test("a text row costs its own height plus PAD of it, as DCL stacks them", () =>
   const offset = axisOffsets(type, 0, 2);
   const row = offset.xRow(1) - offset.xRow(0);
   assert.equal(Math.round(row), Math.round(type.tick * (PAD + 1)));
+});
+
+// The DCL property: the label height is the only unit, so the same figure at
+// twice the type size is the same figure. A length that stops scaling here is a
+// pixel constant that has crept back into the ladder.
+test("every axis offset scales with the type size", () => {
+  const small: PlotType = { tick: 11, axis: 13 };
+  const large: PlotType = { tick: 22, axis: 26 };
+  const at = (type: PlotType) => axisOffsets(type, 5, 1);
+  const a = at(small);
+  const b = at(large);
+  for (const key of ["xLabel", "yLabel", "xTitle", "yTitle"] as const) {
+    assert.ok(
+      Math.abs(b[key] / a[key] - 2) < 1e-9,
+      `${key} did not double with the type: ${a[key]} -> ${b[key]}`,
+    );
+  }
+  assert.equal(tickLength(large), 2 * tickLength(small));
 });
 
 test("widestLabel measures the longest formatted tick", () => {

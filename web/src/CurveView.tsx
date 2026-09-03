@@ -16,13 +16,22 @@ import {
   describeTime,
   formatTimestamp,
   timeInZone,
-  timeTickLabel,
+  timeAxisTicks,
   type DisplayTimeZone,
   type TimeDescription,
-  type TimeTickLabel,
+
 } from "./time";
 import { useElementSize } from "./useElementSize";
-import { DEFAULT_TYPE, TICK, axisOffsets, plotMargin, plotType, widestLabel, type PlotType } from "./plotgeom";
+import {
+  DEFAULT_TYPE,
+  PITCH,
+  axisOffsets,
+  plotMargin,
+  plotType,
+  tickLength,
+  widestLabel,
+  type PlotType,
+} from "./plotgeom";
 
 /** A multi-day time axis stacks the time under the date, so reserve two label rows. */
 function curveMargin(type: PlotType) {
@@ -567,24 +576,35 @@ export function CurveAxes({
   const { plot } = geometry;
   const bottom = plot.top + plot.height;
   const type = geometry.type ?? DEFAULT_TYPE;
-  // A time axis keeps evenly spaced samples so date and time rows stay legible;
-  // a numeric axis snaps to round values like every other axis in the app.
-  const xTicks = time
-    ? [0, 0.25, 0.5, 0.75, 1].map(
-        (fraction) => geometry.xMinimum + fraction * (geometry.xMaximum - geometry.xMinimum),
-      )
-    : axisTicks(geometry.xMinimum, geometry.xMaximum, tickCountForLength(plot.width)).values;
-  const xFormat = time
-    ? undefined
-    : axisTicks(geometry.xMinimum, geometry.xMaximum, tickCountForLength(plot.width)).format;
   const xSpan = geometry.xMaximum - geometry.xMinimum;
+  // A time axis lands on the clock: midnight majors carrying the date, minor
+  // ticks on the hours between. A numeric axis snaps to round values like every
+  // other axis in the app.
+  const numeric = time
+    ? undefined
+    : axisTicks(
+        geometry.xMinimum,
+        geometry.xMaximum,
+        tickCountForLength(plot.width, type.tick * PITCH.along),
+      );
+  // Two digits of label, so DCL's two-label-height minimum is the whole rule.
+  const timeTicks = time
+    ? timeAxisTicks(
+        geometry.xMinimum,
+        geometry.xMaximum,
+        time,
+        (xSpan / Math.max(1, plot.width)) * type.tick * PITCH.time,
+      )
+    : [];
   const xAt = (value: number) =>
     plot.left + (xSpan === 0 ? 0.5 : (value - geometry.xMinimum) / xSpan) * plot.width;
-  const y = axisTicks(geometry.yMinimum, geometry.yMaximum, tickCountForLength(plot.height, 58));
+  const y = axisTicks(geometry.yMinimum, geometry.yMaximum, tickCountForLength(plot.height, type.tick * PITCH.across));
+  const tick = tickLength(type);
   const ySpan = geometry.yMaximum - geometry.yMinimum;
   const yAt = (value: number) =>
     plot.top + (1 - (ySpan === 0 ? 0.5 : (value - geometry.yMinimum) / ySpan)) * plot.height;
   const offset = axisOffsets(type, widestLabel(y.values, y.format), time ? 2 : 1);
+  const minorTick = tickLength(type, true);
   return (
     <g
       className="plot-axis curve-axis"
@@ -602,25 +622,37 @@ export function CurveAxes({
         />
       ))}
       <path d={`M${plot.left} ${plot.top}V${bottom}H${plot.left + plot.width}`} />
-      {xTicks.map((value, index) => {
+      {numeric?.values.map((value) => {
         const x = xAt(value);
-        const label: TimeTickLabel = time
-          ? timeTickLabel(value, time, xSpan)
-          : { primary: xFormat!(value) };
         return (
-          <g key={`x-${time ? index : value}`}>
-            <line x1={x} x2={x} y1={bottom} y2={bottom + TICK} />
+          <g key={`x-${value}`}>
+            <line x1={x} x2={x} y1={bottom} y2={bottom + tick} />
+            <text x={x} y={bottom + offset.xRow(0)} textAnchor="middle">
+              {numeric.format(value)}
+            </text>
+          </g>
+        );
+      })}
+      {timeTicks.map((entry) => {
+        const x = xAt(entry.value);
+        return (
+          <g key={`x-${entry.value}`}>
+            <line x1={x} x2={x} y1={bottom} y2={bottom + (entry.major ? tick : minorTick)} />
+            {/* 0.27 minor em is the difference between the full and half tick
+                lengths. It keeps the gap from each tick tip equal while the
+                hour and date keep separate baselines. */}
             <text
-              className={label.day ? "time-day" : "time-hour"}
+              className={entry.major ? "time-day" : "time-hour"}
               x={x}
               y={bottom + offset.xRow(0)}
+              dy={entry.major ? undefined : "-0.27em"}
               textAnchor="middle"
             >
-              {label.primary}
+              {entry.primary}
             </text>
-            {label.secondary && (
-              <text className="time-secondary" x={x} y={bottom + offset.xRow(1)} textAnchor="middle">
-                {label.secondary}
+            {entry.month && (
+              <text className="time-day" x={x} y={bottom + offset.xRow(1)} textAnchor="middle">
+                {entry.month}
               </text>
             )}
           </g>
@@ -628,7 +660,7 @@ export function CurveAxes({
       })}
       {y.values.map((value) => (
         <g key={`y-${value}`}>
-          <line x1={plot.left - TICK} x2={plot.left} y1={yAt(value)} y2={yAt(value)} />
+          <line x1={plot.left - tick} x2={plot.left} y1={yAt(value)} y2={yAt(value)} />
           <text x={plot.left - offset.yLabel} y={yAt(value)} dy="0.32em" textAnchor="end">
             {y.format(value)}
           </text>

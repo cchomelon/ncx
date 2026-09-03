@@ -294,11 +294,27 @@
   --raised: rgb(255 255 255 / 88%); /* tooltips and chips over data */
   --shadow: rgb(0 0 0 / 8%);
 
+  /* Space. One unit, and every padding, gap and chrome height is a whole
+     multiple of it -- 2px is allowed as the half unit for the tightest gaps,
+     and nothing else is. The unit is a quarter of the UI text row
+     (--size-body 0.875rem x --line-height-ui 1.45 = 20px), so the paddings
+     system and the typographic rhythm are the same grid rather than two that
+     nearly agree. Type stays in rem and space stays in px on purpose: type
+     must follow the reader's font size, but a gap that grows with it would
+     push the chrome off a fixed viewport.
+
+     Drawn marks -- caret strokes, tick heights, playhead widths -- are figures,
+     not spacing, and keep whatever size the shape needs.
+
+     Press Ctrl+Alt+G to lay the grid over the running app; anything that does
+     not land on a line is a violation. */
+  --u: 4px;
+
   --topbar-height: 32px;
-  --toolbar-height: 46px;
-  --timeline-height: 74px;
-  --status-height: 25px;
-  --sidebar-width: 260px;
+  --toolbar-height: 48px;
+  --timeline-height: 72px;
+  --status-height: 24px;
+  --sidebar-width: 256px;
 
   font-family: var(--ui-face);
   /* Gorton sets tight, and a monoline face needs air between strokes to stay
@@ -317,6 +333,20 @@
 
 * {
   box-sizing: border-box;
+}
+
+/* ponytail: the overlay is two gradients on one pseudo-element, no component
+   and no assets. Minor lines mark the unit, major lines the 20px text row. */
+body[data-grid]::after {
+  position: fixed;
+  z-index: 999;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(to bottom, rgb(17 65 96 / 26%) 0 1px, transparent 1px 20px),
+    repeating-linear-gradient(to bottom, rgb(17 65 96 / 10%) 0 1px, transparent 1px var(--u)),
+    repeating-linear-gradient(to right, rgb(17 65 96 / 10%) 0 1px, transparent 1px var(--u));
+  content: "";
+  pointer-events: none;
 }
 
 html,
@@ -378,14 +408,14 @@ button,
 select,
 input[type="search"],
 input[type="number"] {
-  min-height: 27px;
+  min-height: 28px;
   border: 1px solid var(--line);
   border-radius: 0;
   background: var(--paper);
 }
 
 button {
-  padding: 0 9px;
+  padding: 0 8px;
   cursor: pointer;
 }
 
@@ -491,7 +521,7 @@ button:disabled {
 }
 
 .brand {
-  padding: 0 13px;
+  padding: 0 12px;
   font-family: var(--plot-face);
   font-size: var(--size-title);
   font-weight: 700;
@@ -503,7 +533,7 @@ button:disabled {
   min-width: 0;
   overflow: hidden;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   color: var(--ink-medium);
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -521,8 +551,8 @@ button:disabled {
 .dataset-switcher {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 10px;
+  gap: 8px;
+  padding: 0 8px;
   border-right: 1px solid var(--line);
   color: var(--ink-quiet);
   font-size: var(--size-tick);
@@ -580,7 +610,7 @@ button:disabled {
 .dataset-head {
   display: flex;
   justify-content: flex-end;
-  padding: 11px 12px 7px;
+  padding: 12px 12px 8px;
 }
 
 .dataset-head span {
@@ -589,7 +619,7 @@ button:disabled {
 }
 
 .variable-filter {
-  padding: 10px 10px 8px;
+  padding: 8px 8px 8px;
 }
 
 .collection-sidebar .variable-filter {
@@ -606,8 +636,8 @@ button:disabled {
 .variable-filter label {
   display: flex;
   align-items: center;
-  gap: 5px;
-  margin-top: 6px;
+  gap: 4px;
+  margin-top: 8px;
   color: var(--ink-medium);
   font-size: var(--size-micro);
   letter-spacing: var(--track-small);
@@ -630,7 +660,7 @@ button:disabled {
 
 .tree summary,
 .warnings summary {
-  padding: 7px 10px;
+  padding: 8px 8px;
   color: var(--ink-medium);
   cursor: pointer;
   font-size: var(--size-tick);
@@ -650,7 +680,7 @@ button:disabled {
   display: inline-block;
   width: 0;
   height: 0;
-  margin-right: 7px;
+  margin-right: 8px;
   vertical-align: 0.05em;
   border-top: 3.5px solid transparent;
   border-bottom: 3.5px solid transparent;
@@ -666,7 +696,7 @@ button:disabled {
 .collection-file > summary {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
 }
 
 .collection-file > summary strong {
@@ -688,13 +718,13 @@ button:disabled {
 }
 
 .collection-file .variable-row {
-  padding-left: 30px;
+  padding-left: 32px;
 }
 
 .collection-note,
 .collection-error {
   margin: 0;
-  padding: 7px 20px;
+  padding: 8px 20px;
   color: var(--ink-quiet);
   font-size: var(--size-tick);
   letter-spacing: var(--track-small);
@@ -708,7 +738,7 @@ button:disabled {
   display: grid;
   width: 100%;
   min-height: 0;
-  padding: 4px 11px 5px 20px;
+  padding: 4px 12px 4px 20px;
   border: 0;
   border-radius: 0;
   text-align: left;
@@ -754,7 +784,7 @@ button:disabled {
 
 .warnings p {
   margin: 0;
-  padding: 4px 10px;
+  padding: 4px 8px;
   font-size: var(--size-tick);
   letter-spacing: var(--track-small);
 }
@@ -822,7 +852,7 @@ button:disabled {
      row only on windows too narrow to hold one. */
   flex-wrap: wrap;
   gap: 4px 0;
-  padding: 5px 0 5px 9px;
+  padding: 4px 0 4px 8px;
 }
 
 /* One group per thing being controlled — displayed axes, fixed indices,
@@ -833,7 +863,7 @@ button:disabled {
   flex: none;
   align-items: center;
   gap: 8px;
-  margin-right: 22px;
+  margin-right: 24px;
 }
 
 .control-group:last-child {
@@ -844,8 +874,8 @@ button:disabled {
   display: flex;
   flex: none;
   align-items: center;
-  gap: 6px;
-  padding: 5px 9px;
+  gap: 8px;
+  padding: 4px 8px;
   border-left: 1px solid var(--line);
 }
 
@@ -876,11 +906,11 @@ button:disabled {
 
 .display-controls input[type="number"] {
   width: 8.75ch;
-  padding: 0 5px;
+  padding: 0 4px;
 }
 
 .display-controls .range-values {
-  gap: 5px;
+  gap: 4px;
 }
 
 .display-controls .range-values input {
@@ -947,8 +977,8 @@ button:disabled {
      The two were adjacent-left before, which reads as a title and its
      afterthought rather than as a labelled pane. */
   justify-content: space-between;
-  gap: 10px;
-  padding: 9px 14px 3px;
+  gap: 8px;
+  padding: 8px 12px 4px;
   font-family: var(--plot-face);
 }
 
@@ -990,9 +1020,9 @@ button:disabled {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   overflow-x: auto;
-  padding: 5px 8px;
+  padding: 4px 8px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
   white-space: nowrap;
@@ -1001,8 +1031,8 @@ button:disabled {
 .series-control {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding-right: 7px;
+  gap: 4px;
+  padding-right: 8px;
   border-right: 1px solid var(--line);
   font-size: var(--size-tick);
   letter-spacing: var(--track-small);
@@ -1028,7 +1058,7 @@ button:disabled {
 .series-control label {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   color: var(--ink-medium);
   font-size: var(--size-micro);
   font-weight: 400;
@@ -1094,7 +1124,7 @@ button:disabled {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   padding: 0 8px;
   background: var(--panel);
   font-size: var(--size-tick);
@@ -1117,7 +1147,7 @@ button:disabled {
   position: absolute;
   right: 10px;
   bottom: 4px;
-  padding: 2px 5px;
+  padding: 2px 4px;
   background: var(--warn-bg);
 }
 
@@ -1150,7 +1180,7 @@ button:disabled {
 }
 
 .scalar-value small {
-  margin-top: 5px;
+  margin-top: 4px;
   color: var(--ink-quiet);
 }
 
@@ -1220,7 +1250,7 @@ button:disabled {
 .view-controls button {
   min-width: 24px;
   min-height: 24px;
-  padding: 0 6px;
+  padding: 0 8px;
   background: var(--paper);
   font-size: var(--size-micro);
   letter-spacing: var(--track-small);
@@ -1335,7 +1365,7 @@ button:disabled {
   min-width: 150px;
   max-width: 220px;
   gap: 4px;
-  padding: 9px 11px;
+  padding: 8px 12px;
   border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
   border-radius: 0;
   background: var(--raised);
@@ -1355,7 +1385,7 @@ button:disabled {
   top: 6px;
   right: 10px;
   z-index: 3;
-  padding: 4px 7px;
+  padding: 4px 8px;
   border: 1px solid var(--line);
   background: var(--raised);
   color: var(--ink-medium);
@@ -1367,7 +1397,7 @@ button:disabled {
   position: absolute;
   inset: 45% auto auto 50%;
   max-width: min(520px, 80%);
-  padding: 12px 14px;
+  padding: 12px 16px;
   border: 1px solid var(--error-line);
   background: var(--error-bg);
   color: var(--error-ink);
@@ -1400,13 +1430,19 @@ button:disabled {
 /* The fishbone is an axis, so it is set like one: the primary tick label
    matches the plot's own tick size rather than shrinking below it, and a time
    sits one step down when a multi-day axis needs both date and time. */
+/* The date is the axis, the hours are its subdivision, so the hour sits one
+   step down the modular ladder -- 2^(-1/4), the same interval every other pair
+   of roles in this style is separated by. Weight and ink carry the distinction
+   too, because a size step alone is not visible at a glance and is invisible
+   in greyscale print. */
 .time-hour,
 .time-secondary {
-  font-size: var(--plot-tick-size);
+  font-size: calc(var(--plot-tick-size) * 0.841);
   fill: var(--ink-medium);
 }
 
 .time-day {
+  font-size: var(--plot-tick-size);
   font-weight: 700;
   fill: var(--ink);
 }
@@ -1418,17 +1454,17 @@ button:disabled {
 .metadata-panel {
   height: 100%;
   overflow: auto;
-  padding: 18px 22px 36px;
+  padding: 16px 24px 36px;
 }
 
 .metadata-panel section {
   max-width: 1100px;
-  margin-bottom: 22px;
+  margin-bottom: 24px;
 }
 
 .metadata-panel h2,
 .metadata-panel h3 {
-  margin: 0 0 10px;
+  margin: 0 0 8px;
 }
 
 .metadata-panel h2 {
@@ -1451,7 +1487,7 @@ button:disabled {
 }
 
 .metadata-summary div {
-  padding: 9px 11px;
+  padding: 8px 12px;
   border-right: 1px solid var(--line);
 }
 
@@ -1460,7 +1496,7 @@ button:disabled {
 }
 
 .metadata-summary dt {
-  margin-bottom: 3px;
+  margin-bottom: 4px;
   color: var(--ink-quiet);
   font-size: var(--size-micro);
   letter-spacing: var(--track-small);
@@ -1483,7 +1519,7 @@ button:disabled {
 
 .metadata-panel th,
 .metadata-panel td {
-  padding: 7px 9px;
+  padding: 8px 8px;
   border: 1px solid var(--line);
   text-align: left;
   vertical-align: top;
@@ -1517,8 +1553,8 @@ button:disabled {
   display: grid;
   grid-template-columns: auto auto minmax(120px, 1fr);
   align-items: center;
-  gap: 10px;
-  padding: 6px 10px;
+  gap: 8px;
+  padding: 8px 8px;
   border-top: 1px solid var(--line);
   background: var(--panel);
 }
@@ -1597,7 +1633,7 @@ button:disabled {
   top: 24px;
   right: 8px;
   left: 8px;
-  height: 34px;
+  height: 32px;
   border-top: 1px solid var(--ink-weak);
   font-family: var(--plot-face);
   pointer-events: none;
@@ -1646,9 +1682,9 @@ button:disabled {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: 14px;
+  gap: 16px;
   min-width: 0;
-  padding: 0 10px;
+  padding: 0 8px;
   /* The one dark strip, and the only one: it reports the machine's own state
      continuously rather than offering an action. A second plate surface would
      make it a theme instead of a signal. */
@@ -1687,7 +1723,7 @@ button:disabled {
 
 @media (max-width: 760px) {
   :root {
-    --sidebar-width: min(82vw, 290px);
+    --sidebar-width: min(82vw, 288px);
   }
 
   .shell {
@@ -1741,8 +1777,8 @@ button:disabled {
   }
 
   .variable-row {
-    padding-top: 9px;
-    padding-bottom: 10px;
+    padding-top: 8px;
+    padding-bottom: 8px;
   }
 }
 

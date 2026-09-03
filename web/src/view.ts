@@ -24,6 +24,24 @@ export function fitPlotToBounds(plot: ViewRectangle, bounds: ViewBounds): ViewRe
   return { ...plot, left: plot.left + (plot.width - width) / 2, width };
 }
 
+/** Project top-origin source bounds without clipping them to the current view. */
+export function projectRectangle(
+  rectangle: ViewRectangle,
+  view: ViewBounds,
+  width: number,
+  height: number,
+): ViewRectangle {
+  const viewWidth = view.maximumX - view.minimumX;
+  const viewHeight = view.maximumY - view.minimumY;
+  const viewTop = 1 - view.maximumY;
+  return {
+    left: ((rectangle.left - view.minimumX) / viewWidth) * width,
+    top: ((rectangle.top - viewTop) / viewHeight) * height,
+    width: (rectangle.width / viewWidth) * width,
+    height: (rectangle.height / viewHeight) * height,
+  };
+}
+
 export function aspectRectangle(
   first: { x: number; y: number },
   second: { x: number; y: number },

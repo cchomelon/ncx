@@ -12,20 +12,67 @@
  * So the geometry is derived from the type size instead of chosen for one, and
  * the margins, the axis renderer and the PNG export all read it from here.
  *
- * The stacking rule is DCL's (see ../../Style/Dennou.md): a row of text costs
- * PAD of its own height as a gap, then its full height, and rows stack without
- * measuring the text. That is what keeps two panels with different labels
- * lining up, and it means the whole layout follows from two constants and the
- * font size.
+ * The stacking rule is DCL's (see ../../Style/Reference/Dennou.md): a row of
+ * text costs PAD of its own height as a gap, then its full height, and rows
+ * stack without measuring the text. That is what keeps two panels with
+ * different labels lining up.
+ *
+ * Every length here is a multiple of the tick label height, which is DCL's own
+ * arrangement one anchor along: DCL measures its ladder against the page
+ * (`uzrqnp.f` gives tick 0.007, label 0.021, title 0.028 of the long side),
+ * Style re-anchors the same ratios on the tick type size, and this follows
+ * Style. The consequence is the one worth keeping: a figure has no absolute
+ * size, so what is exported is what was on screen, larger.
  */
 
-/** Tick mark length. The one length not derived from type: a tick is a mark on
- *  a rule, and it stays a mark when the labels grow. Matches Style's 1:2 minor
- *  to major ladder at its major end. */
-export const TICK = 5;
+/**
+ * Tick mark length, in units of the tick label height (Style `rc.TICK_MAJOR`).
+ *
+ * DCL sizes the whole axis against the page: `RSIZET2` 0.014 against `RSIZEL1`
+ * 0.021, so a tick is two thirds of a label. Style re-anchored that ratio on
+ * the type size and pulled it back to 0.45, because DCL's own tick runs about
+ * a fifth of a tick interval and is far too loud pointing outward.
+ *
+ * This was a flat 5px, which is the one thing the ladder does not allow: it
+ * held at 5px while the type ran from 14px to 22px, so a figure exported large
+ * was not the same figure seen small. Nothing in a Dennou plot has a length of
+ * its own -- the label height is the unit, and everything else is a multiple.
+ */
+export const TICK_MAJOR = 0.45;
+
+/** Minor tick, keeping DCL's exact 2:1 (`RSIZET2` over `RSIZET1`). */
+export const TICK_MINOR = TICK_MAJOR / 2;
 
 /** DCL PAD1: the gap before a row of text, in units of that row's own height. */
 export const PAD = 0.7;
+
+/**
+ * Gap between a tick label and the tick, in label heights (Style `rc.TICK_PAD`).
+ *
+ * Smaller than PAD because DCL measures PAD1 from the axis line, while these
+ * ticks point outward and the gap starts past the tick.
+ */
+export const TICK_PAD = 0.38;
+
+/**
+ * Tick pitch, in label heights: `along` for labels reading along their axis,
+ * `across` for an axis whose labels stack sideways and need only their height.
+ *
+ * DCL derives the interval from the label width and a one- or two-character
+ * gap (`ususcu.f`, NBLANK1/NBLANK2). These two constants stand in for that
+ * measurement, and hold the pitch the panels already had at 14px type -- the
+ * point of naming them is that the pitch now rides the type size instead of
+ * being a pixel count that silently crowds the labels as the type grows.
+ *
+ * `time` is DCL's own TFACT of 2 (`usurdt.f`), which the clock axis can afford
+ * because its labels are two digits rather than a formatted number.
+ */
+export const PITCH = { along: 6, across: 4.2, time: 2 };
+
+/** Tick length for a given type size. */
+export function tickLength(type: PlotType, minor = false): number {
+  return type.tick * (minor ? TICK_MINOR : TICK_MAJOR);
+}
 
 /**
  * Character advance of the plot face, in units of the font size.
@@ -73,20 +120,21 @@ export function plotType(root: Element | null): PlotType {
  * column, so it takes the longest tick label the caller is about to draw.
  */
 export function axisOffsets(type: PlotType, yLabelChars = 0, xRows = 1) {
+  const tick = tickLength(type);
   const labelRow = type.tick * (PAD + 1);
   const column = yLabelChars * type.tick * ADVANCE;
   return {
     /** Baseline of the nth stacked x tick label row, below the frame. A time
      *  axis stacks a month under the day; a plain one has a single row. */
-    xRow: (row: number) => TICK + type.tick * PAD + type.tick * 0.78 + row * labelRow,
+    xRow: (row: number) => tick + type.tick * TICK_PAD + type.tick * 0.78 + row * labelRow,
     /** Tick label baseline below the frame. Half the cap height re-centres it. */
-    xLabel: TICK + type.tick * PAD + type.tick * 0.78,
+    xLabel: tick + type.tick * TICK_PAD + type.tick * 0.78,
     /** Tick label baseline left of the frame; the text is end-anchored. */
-    yLabel: TICK + type.tick * PAD,
+    yLabel: tick + type.tick * TICK_PAD,
     /** Axis title centre, below the frame, clear of the label row. */
-    xTitle: TICK + labelRow * xRows + type.axis * (PAD + 0.5),
+    xTitle: tick + labelRow * xRows + type.axis * (PAD + 0.5),
     /** Axis title centre, left of the frame, clear of the label column. */
-    yTitle: TICK + type.tick * PAD + column + type.axis * (PAD + 0.5),
+    yTitle: tick + type.tick * TICK_PAD + column + type.axis * (PAD + 0.5),
   };
 }
 
@@ -132,8 +180,8 @@ export const COLORBAR_CHARS = 6;
 export function colorbarGeometry(type: PlotType, tickChars = COLORBAR_CHARS) {
   const bar = Math.max(10, Math.round(type.tick * 0.7));
   const gap = Math.round(type.tick * 0.9);
-  const mark = Math.round(TICK * 0.8);
-  const labelX = gap + bar + mark + type.tick * PAD;
+  const mark = Math.round(tickLength(type) * 0.8);
+  const labelX = gap + bar + mark + type.tick * TICK_PAD;
   const column = Math.max(tickChars, COLORBAR_CHARS) * type.tick * ADVANCE;
   const captionX = labelX + column + type.axis * (PAD + 0.5);
   return {

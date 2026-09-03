@@ -8,6 +8,7 @@ import {
   formatTimestamp,
   parseDisplayTimeZone,
   timeInZone,
+  timeAxisTicks,
   timeTickLabel,
 } from "./time.ts";
 
@@ -58,6 +59,59 @@ test("uses Style date-time labels without repeating one UTC hour across days", (
     { primary: "26 Jul", secondary: "06Z", day: true },
     { primary: "27 Jul", secondary: "06Z", day: true },
   ]);
+});
+
+test("the curve time axis majors on midnight and names the month once", () => {
+  const utcVariable = {
+    ...variable,
+    attributes: [{ name: "units", dtype: "string", value: "hours since 2024-09-19 00:00:00 UTC" }],
+  };
+  const time = describeTime(utcVariable);
+  assert.ok(time);
+  // 24 to 51 hours after the origin is 20 Sep 00Z through 21 Sep 03Z.
+  const ticks = timeAxisTicks(24, 51, time, 3);
+  assert.deepEqual(
+    ticks.map((tick) => [tick.primary, tick.major, tick.month]),
+    [
+      ["20", true, "Sep"],
+      ["03", false, undefined],
+      ["06", false, undefined],
+      ["09", false, undefined],
+      ["12", false, undefined],
+      ["15", false, undefined],
+      ["18", false, undefined],
+      ["21", false, undefined],
+      ["21", true, undefined],
+      ["03", false, undefined],
+    ],
+  );
+  // No label carries a zone suffix, and midnight never prints as an hour.
+  assert.ok(ticks.every((tick) => !tick.primary.includes("Z")));
+  assert.ok(ticks.every((tick) => tick.major || tick.primary !== "00"));
+});
+
+test("the curve time axis names the month again when it turns", () => {
+  const utcVariable = {
+    ...variable,
+    attributes: [{ name: "units", dtype: "string", value: "hours since 2024-09-30 00:00:00 UTC" }],
+  };
+  const time = describeTime(utcVariable);
+  assert.ok(time);
+  const months = timeAxisTicks(0, 48, time, 24).map((tick) => tick.month);
+  assert.deepEqual(months, ["Sep", "Oct", undefined]);
+});
+
+test("the curve time axis coarsens the step when the panel is narrow", () => {
+  const time = describeTime(variable);
+  assert.ok(time);
+  const spacing = (step: number) => {
+    const ticks = timeAxisTicks(0, 240, time, step);
+    return ticks[1].value - ticks[0].value;
+  };
+  assert.equal(spacing(1), 1);
+  assert.equal(spacing(3), 3);
+  assert.equal(spacing(4), 6);
+  assert.equal(spacing(13), 24);
 });
 
 test("changes display timezone without changing the CF time instant", () => {

@@ -10,7 +10,15 @@ import { colorForValue, colorPosition, type ColorRange } from "./color";
 import type { ColorScale } from "./model";
 import type { ColormapChoice } from "./color";
 import { axisTicks, tickCountForLength } from "./ticks";
-import { DEFAULT_TYPE, TICK, axisOffsets, colorbarGeometry, widestLabel, type PlotType } from "./plotgeom";
+import {
+  DEFAULT_TYPE,
+  PITCH,
+  axisOffsets,
+  colorbarGeometry,
+  tickLength,
+  widestLabel,
+  type PlotType,
+} from "./plotgeom";
 
 export interface PlotBounds {
   left: number;
@@ -60,8 +68,9 @@ export function PlotAxes({
   /** Live plot type sizes; furniture offsets are derived from them. */
   type?: PlotType;
 }) {
-  const x = axisTicks(xDomain[0], xDomain[1], tickCountForLength(plot.width));
-  const y = axisTicks(yDomain[0], yDomain[1], tickCountForLength(plot.height, 58));
+  const tick = tickLength(type);
+  const x = axisTicks(xDomain[0], xDomain[1], tickCountForLength(plot.width, type.tick * PITCH.along));
+  const y = axisTicks(yDomain[0], yDomain[1], tickCountForLength(plot.height, type.tick * PITCH.across));
   const xAt = scaleFor(xDomain, plot.width, false);
   const yAt = scaleFor(yDomain, plot.height, true);
   const bottom = plot.top + plot.height;
@@ -92,7 +101,7 @@ export function PlotAxes({
         const position = plot.left + xAt(value);
         return (
           <g key={`x-${value}`}>
-            <line x1={position} x2={position} y1={bottom} y2={bottom + TICK} />
+            <line x1={position} x2={position} y1={bottom} y2={bottom + tick} />
             <text x={position} y={bottom + offset.xLabel} textAnchor="middle">{x.format(value)}</text>
           </g>
         );
@@ -101,7 +110,7 @@ export function PlotAxes({
         const position = plot.top + yAt(value);
         return (
           <g key={`y-${value}`}>
-            <line x1={plot.left - TICK} x2={plot.left} y1={position} y2={position} />
+            <line x1={plot.left - tick} x2={plot.left} y1={position} y2={position} />
             <text
               x={plot.left - offset.yLabel}
               y={position}
@@ -161,7 +170,7 @@ export function Colorbar({
   type?: PlotType;
 }) {
   const gradientId = `ramp-${colormap}`;
-  const ticks = axisTicks(range.minimum, range.maximum, tickCountForLength(plot.height, 52));
+  const ticks = axisTicks(range.minimum, range.maximum, tickCountForLength(plot.height, type.tick * PITCH.across));
   const bar = colorbarGeometry(type, widestLabel(ticks.values, ticks.format));
   const width = bar.bar;
   const right = plot.left + plot.width;

@@ -27,6 +27,7 @@ import {
   boxZoomBounds,
   fitPlotToBounds,
   panBounds,
+  projectRectangle,
   zoomBounds,
   type ViewBounds,
   type ViewRectangle,
@@ -88,6 +89,8 @@ const FULL_FIELD: ViewBounds = { minimumX: 0, maximumX: 1, minimumY: 0, maximumY
 export function FieldView(props: FieldViewProps) {
   const [frame, frameSize] = useElementSize<HTMLDivElement>();
   const canvas = useRef<HTMLCanvasElement>(null);
+  const sourceCanvas = useRef<HTMLCanvasElement | null>(null);
+  const rasterImage = useRef<ImageData | null>(null);
   const loader = useRef<LatestSliceLoader>(new LatestSliceLoader());
   const [slice, setSlice] = useState<DataSlice>();
   const [coordinates, setCoordinates] = useState<Coordinates>({});
@@ -217,34 +220,46 @@ export function FieldView(props: FieldViewProps) {
         maximumY: layout.yDomain[1],
       })
     : availablePlot;
+  const automaticRange = useMemo(
+    () => slice?.values instanceof Float32Array
+      ? finiteRange(slice.values, props.colormap)
+      : undefined,
+    [slice, props.colormap],
+  );
+  const renderRange = props.rangeLocked || props.sharedRange ? props.range : automaticRange;
 
   useEffect(() => {
-    const node = canvas.current;
-    if (!node || !slice || !layout || !(slice.values instanceof Float32Array)) return;
-    const automaticRange = finiteRange(slice.values, props.colormap);
-    const nextRange = props.rangeLocked || props.sharedRange ? props.range : automaticRange;
-    const visible = fieldWindow(layout, view);
     if (
+      automaticRange &&
       !props.rangeLocked &&
       (automaticRange.minimum !== props.range.minimum || automaticRange.maximum !== props.range.maximum)
     ) {
       props.onRange(automaticRange);
     }
-    node.width = visible.columns;
-    node.height = visible.rows;
-    const context = node.getContext("2d", { alpha: false });
+  }, [automaticRange, props.range.minimum, props.range.maximum, props.rangeLocked, props.onRange]);
+
+  // Keep colour conversion off the pan path. View-only changes composite this cached raster.
+  useEffect(() => {
+    if (!slice || !layout || !renderRange || !(slice.values instanceof Float32Array)) return;
+    const source = sourceCanvas.current ?? document.createElement("canvas");
+    sourceCanvas.current = source;
+    if (source.width !== layout.columns || source.height !== layout.rows) {
+      source.width = layout.columns;
+      source.height = layout.rows;
+      rasterImage.current = null;
+    }
+    const context = source.getContext("2d", { alpha: false });
     if (!context) return;
-    const image = context.createImageData(visible.columns, visible.rows);
-    for (let targetRow = 0; targetRow < visible.rows; targetRow += 1) {
-      for (let targetColumn = 0; targetColumn < visible.columns; targetColumn += 1) {
-        const displayRow = visible.firstRow + targetRow;
-        const displayColumn = visible.firstColumn + targetColumn;
-        const row = layout.flipY ? layout.rows - 1 - displayRow : displayRow;
-        const column = layout.flipX ? layout.columns - 1 - displayColumn : displayColumn;
-        const target = (targetRow * visible.columns + targetColumn) * 4;
+    const image = rasterImage.current ?? context.createImageData(layout.columns, layout.rows);
+    rasterImage.current = image;
+    for (let targetRow = 0; targetRow < layout.rows; targetRow += 1) {
+      const row = layout.flipY ? layout.rows - 1 - targetRow : targetRow;
+      for (let targetColumn = 0; targetColumn < layout.columns; targetColumn += 1) {
+        const column = layout.flipX ? layout.columns - 1 - targetColumn : targetColumn;
+        const target = (targetRow * layout.columns + targetColumn) * 4;
         const color = colorForValue(
           layout.valueAt(row, column),
-          nextRange,
+          renderRange,
           props.scale,
           props.colormap,
         );
@@ -252,16 +267,42 @@ export function FieldView(props: FieldViewProps) {
           image.data[target] = color[0];
           image.data[target + 1] = color[1];
           image.data[target + 2] = color[2];
-          image.data[target + 3] = 255;
         } else {
           image.data[target] = 238;
           image.data[target + 1] = 238;
           image.data[target + 2] = 238;
-          image.data[target + 3] = 255;
         }
+        image.data[target + 3] = 255;
       }
     }
     context.putImageData(image, 0, 0);
+  }, [
+    slice,
+    layout,
+    props.colormap,
+    props.scale,
+    renderRange?.minimum,
+    renderRange?.maximum,
+  ]);
+
+  useEffect(() => {
+    const node = canvas.current;
+    const source = sourceCanvas.current;
+    if (!node || !source || !slice || !layout || !renderRange) return;
+    const ratio = Math.min(2, window.devicePixelRatio || 1);
+    const width = Math.max(1, Math.round(plot.width * ratio));
+    const height = Math.max(1, Math.round(plot.height * ratio));
+    if (node.width !== width || node.height !== height) {
+      node.width = width;
+      node.height = height;
+    }
+    const context = node.getContext("2d", { alpha: false });
+    if (!context) return;
+    context.imageSmoothingEnabled = false;
+    context.fillStyle = "#eee";
+    context.fillRect(0, 0, width, height);
+    const destination = projectRectangle(fieldSliceBounds(layout), view, width, height);
+    context.drawImage(source, destination.left, destination.top, destination.width, destination.height);
     // Announce a painted canvas, as the mesh view does. A fresh canvas is
     // 300x150 with no pixels drawn, so its size cannot say whether the slice
     // has actually reached the screen.
@@ -271,23 +312,21 @@ export function FieldView(props: FieldViewProps) {
     layout,
     props.colormap,
     props.scale,
-    props.range.minimum,
-    props.range.maximum,
-    props.rangeLocked,
-    props.onRange,
+    renderRange?.minimum,
+    renderRange?.maximum,
+    plot.width,
+    plot.height,
     view,
   ]);
 
   const inspectPointer = (event: PointerEvent<HTMLCanvasElement>): HoverValue | undefined => {
     if (!layout) return undefined;
     const bounds = event.currentTarget.getBoundingClientRect();
-    const visible = fieldWindow(layout, view);
     const screenX = Math.max(0, Math.min(bounds.width - 1, event.clientX - bounds.left));
     const screenY = Math.max(0, Math.min(bounds.height - 1, event.clientY - bounds.top));
-    let column = visible.firstColumn + Math.floor((screenX / bounds.width) * visible.columns);
-    let row = visible.firstRow + Math.floor((screenY / bounds.height) * visible.rows);
-    if (layout.flipX) column = layout.columns - 1 - column;
-    if (layout.flipY) row = layout.rows - 1 - row;
+    const cell = fieldCell(layout, view, screenX / bounds.width, screenY / bounds.height);
+    if (!cell) return undefined;
+    const { column, row } = cell;
     const sourceX = Math.min(
       layout.xDimension.length - 1,
       layout.xStart + column * layout.xStride,
@@ -570,38 +609,37 @@ function fieldLayout(
   };
 }
 
-function fieldWindow(
+function fieldSliceBounds(
   layout: NonNullable<ReturnType<typeof fieldLayout>>,
-  view: ViewBounds,
-) {
+): ViewRectangle {
   const xLength = layout.xDimension.length;
   const yLength = layout.yDimension.length;
-  const sliceLeft = layout.flipX ? 1 - layout.xStop / xLength : layout.xStart / xLength;
-  const sliceRight = layout.flipX ? 1 - layout.xStart / xLength : layout.xStop / xLength;
-  const sliceTop = layout.flipY ? 1 - layout.yStop / yLength : layout.yStart / yLength;
-  const sliceBottom = layout.flipY ? 1 - layout.yStart / yLength : layout.yStop / yLength;
-  const fraction = (value: number, minimum: number, maximum: number) =>
-    Math.max(0, Math.min(1, (value - minimum) / (maximum - minimum)));
-  const left = fraction(view.minimumX, sliceLeft, sliceRight);
-  const right = fraction(view.maximumX, sliceLeft, sliceRight);
-  const top = fraction(1 - view.maximumY, sliceTop, sliceBottom);
-  const bottom = fraction(1 - view.minimumY, sliceTop, sliceBottom);
-  const firstColumn = Math.min(layout.columns - 1, Math.floor(left * layout.columns));
-  const lastColumn = Math.max(
-    firstColumn + 1,
-    Math.min(layout.columns, Math.ceil(right * layout.columns)),
-  );
-  const firstRow = Math.min(layout.rows - 1, Math.floor(top * layout.rows));
-  const lastRow = Math.max(
-    firstRow + 1,
-    Math.min(layout.rows, Math.ceil(bottom * layout.rows)),
-  );
-  return {
-    firstColumn,
-    firstRow,
-    columns: lastColumn - firstColumn,
-    rows: lastRow - firstRow,
-  };
+  const left = layout.flipX ? 1 - layout.xStop / xLength : layout.xStart / xLength;
+  const right = layout.flipX ? 1 - layout.xStart / xLength : layout.xStop / xLength;
+  const top = layout.flipY ? 1 - layout.yStop / yLength : layout.yStart / yLength;
+  const bottom = layout.flipY ? 1 - layout.yStart / yLength : layout.yStop / yLength;
+  return { left, top, width: right - left, height: bottom - top };
+}
+
+function fieldCell(
+  layout: NonNullable<ReturnType<typeof fieldLayout>>,
+  view: ViewBounds,
+  screenX: number,
+  screenY: number,
+): { column: number; row: number } | undefined {
+  const bounds = fieldSliceBounds(layout);
+  const x = view.minimumX + screenX * (view.maximumX - view.minimumX);
+  const y = 1 - view.maximumY + screenY * (view.maximumY - view.minimumY);
+  const columnFraction = (x - bounds.left) / bounds.width;
+  const rowFraction = (y - bounds.top) / bounds.height;
+  if (columnFraction < 0 || columnFraction >= 1 || rowFraction < 0 || rowFraction >= 1) {
+    return undefined;
+  }
+  let column = Math.min(layout.columns - 1, Math.floor(columnFraction * layout.columns));
+  let row = Math.min(layout.rows - 1, Math.floor(rowFraction * layout.rows));
+  if (layout.flipX) column = layout.columns - 1 - column;
+  if (layout.flipY) row = layout.rows - 1 - row;
+  return { column, row };
 }
 
 function sourceRegion(view: ViewBounds, coordinates: Coordinates): ViewBounds {

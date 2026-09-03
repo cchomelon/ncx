@@ -94,6 +94,17 @@ export function App() {
   const fieldViews = useRef(new Map<string, ViewBounds>());
   const requestedVariable = useRef<{ dataset: string; path: string } | undefined>(undefined);
 
+  // A spacing system only stays true if it can be seen; Ctrl+Alt+G lays the
+  // unit grid over the running app.
+  useEffect(() => {
+    const toggle = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || !event.altKey || event.key.toLowerCase() !== "g") return;
+      document.body.toggleAttribute("data-grid");
+    };
+    window.addEventListener("keydown", toggle);
+    return () => { window.removeEventListener("keydown", toggle); };
+  }, []);
+
   useEffect(() => {
     fetchDatasets()
       .then(({ datasets: nextDatasets, collection: nextCollection }) => {

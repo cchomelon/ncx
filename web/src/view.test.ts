@@ -6,6 +6,7 @@ import {
   boxZoomBounds,
   fitPlotToBounds,
   panBounds,
+  projectRectangle,
   zoomBounds,
 } from "./view.ts";
 
@@ -19,6 +20,19 @@ test("fits the plot without stretching data coordinates", () => {
     width: 800,
     height: 400,
   });
+});
+
+test("projects a panned raster without stretching it", () => {
+  const raster = { left: 0.25, top: 0.25, width: 0.5, height: 0.5 };
+  assert.deepEqual(
+    projectRectangle(
+      raster,
+      { minimumX: 0.375, maximumX: 0.875, minimumY: 0.25, maximumY: 0.75 },
+      800,
+      600,
+    ),
+    { left: -200, top: 0, width: 800, height: 600 },
+  );
 });
 
 test("box zoom, buttons, and panning preserve the home aspect", () => {
